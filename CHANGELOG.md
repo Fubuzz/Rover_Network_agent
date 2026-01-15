@@ -1,5 +1,60 @@
 # Changelog - Rover Network Agent
 
+## Version 2.2.0 - Bulk Contact Import
+
+**Date:** 2026-01-15
+
+This update adds bulk contact import functionality, allowing you to upload CSV or Excel files to import multiple contacts at once.
+
+---
+
+### New Features
+
+1. **Bulk Import from CSV/Excel**
+   - Upload CSV or XLSX files directly to the bot
+   - Auto-detects column headers (Name, Email, Company, Title, etc.)
+   - Supports multiple header variations (e.g., "Full Name", "Contact Name", "Name")
+   - Progress reporting during import
+
+2. **Smart Duplicate Handling**
+   - Detects existing contacts by email or name
+   - Updates existing contacts with new data (merge behavior)
+   - Reports count of added vs updated vs skipped
+
+3. **Import Result Summary**
+   - Shows total rows processed
+   - Counts: Added, Updated, Skipped, Failed
+   - Lists first 5 errors with details
+
+### Files Added/Modified
+
+| File | Changes |
+|------|---------|
+| `services/bulk_import.py` | NEW - Core bulk import service |
+| `handlers/input_handlers.py` | Updated document handler |
+| `data/schema.py` | Added ImportResult model |
+| `requirements.txt` | Added openpyxl for Excel support |
+
+### Supported File Formats
+
+- **CSV** - Comma-separated values
+- **XLSX** - Microsoft Excel 2007+
+- **XLS** - Legacy Excel (basic support)
+
+### Header Mapping Examples
+
+| Your Header | Maps To |
+|-------------|---------|
+| Name, Full Name, Contact Name | `full_name` |
+| Email, E-mail, Email Address | `email` |
+| Company, Organization, Firm | `company` |
+| Title, Job Title, Position, Role | `title` |
+| Phone, Mobile, Tel | `phone` |
+| LinkedIn, LinkedIn URL | `linkedin_url` |
+| Type, Category, Classification | `contact_type` |
+
+---
+
 ## Version 2.1.0 - Pydantic Validation & Bug Fixes
 
 **Date:** 2026-01-15

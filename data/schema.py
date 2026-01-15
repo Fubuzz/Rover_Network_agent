@@ -64,6 +64,28 @@ class OperationType(str, Enum):
     IMAGE_OCR = "image_ocr"
 
 
+@dataclass
+class ImportResult:
+    """Result of a bulk import operation."""
+    total_rows: int = 0
+    successful: int = 0
+    updated: int = 0
+    skipped: int = 0
+    failed: int = 0
+    errors: List[str] = field(default_factory=list)
+
+    def add_error(self, error: str):
+        """Add an error message."""
+        self.errors.append(error)
+
+    def summary(self) -> str:
+        """Generate a summary of the import result."""
+        return (
+            f"Total: {self.total_rows}, Added: {self.successful}, "
+            f"Updated: {self.updated}, Skipped: {self.skipped}, Failed: {self.failed}"
+        )
+
+
 # Google Sheets column headers - matching your existing sheet
 SHEET_HEADERS = [
     "contact_id",

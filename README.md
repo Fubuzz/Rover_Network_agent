@@ -4,13 +4,13 @@
 
 A comprehensive Telegram bot powered by CrewAI for managing and nurturing your professional network. Stores contacts in Google Sheets, enriches data through web searches, matches Founders with Investors, and generates personalized outreach emails.
 
-**Version 2.1.0** | [Changelog](CHANGELOG.md)
+**Version 2.2.0** | [Changelog](CHANGELOG.md)
 
-### What's New in 2.1.0
-- ✅ **Pydantic validation** for data integrity
-- ✅ **Fixed contact save bug** - duplicate emails no longer silently fail
-- ✅ **Fixed matchmaker errors** - markdown parsing issues resolved
-- ✅ **Sheet name constants** - explicit worksheet references
+### What's New in 2.2.0
+- ✅ **Bulk Contact Import** - Upload CSV or Excel files to import contacts
+- ✅ **Auto header detection** - Flexible column name mapping
+- ✅ **Smart duplicate handling** - Updates existing contacts with new data
+- ✅ **Import summary** - Shows added, updated, skipped, and failed counts
 
 ## Features
 
@@ -30,7 +30,7 @@ A comprehensive Telegram bot powered by CrewAI for managing and nurturing your p
 - **Voice messages** - transcribed using OpenAI Whisper
 - **Images** - OCR extraction from business cards using GPT-4 Vision
 - **Natural language** - intelligent parsing of contact descriptions
-- **Bulk import** - CSV and text file support
+- **Bulk import** - CSV and Excel file support with auto header detection
 
 ### Analytics & Evaluation
 - **Real-time dashboard** for system monitoring

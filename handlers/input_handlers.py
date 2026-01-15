@@ -248,48 +248,70 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
 # ============================================================
 
 async def handle_document_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle document uploads (CSV, text files) for bulk import."""
+    """Handle document uploads (CSV, Excel files) for bulk import."""
     tracker = get_tracker()
     user_id = str(update.effective_user.id)
-    
+
     tracker.start_operation(
         operation_type=OperationType.IMPORT_CONTACTS.value,
         user_id=user_id,
         command="document_message"
     )
-    
+
     try:
         document = update.message.document
-        file_name = document.file_name.lower()
-        
-        # Check file type
-        if not (file_name.endswith('.csv') or file_name.endswith('.txt')):
+        file_name = document.file_name
+        file_name_lower = file_name.lower()
+
+        # Check supported formats
+        supported_formats = ('.csv', '.xlsx', '.xls')
+        if not file_name_lower.endswith(supported_formats):
             await update.message.reply_text(
-                "Please upload a CSV or TXT file for bulk import. 📄"
+                "📄 Supported formats: CSV, XLSX\n\n"
+                "Please upload a spreadsheet with contact data.\n"
+                "Make sure it has headers like: Name, Email, Company, Title, Phone"
             )
             tracker.end_operation(success=True)
             return
-        
-        await update.message.reply_text("Processing your file... 📁")
-        
+
+        # Send processing message
+        status_msg = await update.message.reply_text(
+            f"📥 Processing {file_name}...\n\n"
+            "This may take a moment for large files."
+        )
+
         # Download file
         file = await context.bot.get_file(document.file_id)
         file_bytes = await file.download_as_bytearray()
-        content = file_bytes.decode('utf-8')
-        
-        # For now, just acknowledge - can be extended for bulk import
-        lines = content.strip().split('\n')
-        await update.message.reply_text(
-            f"Got your file with **{len(lines)}** lines. 📋\n\n"
-            "Bulk import coming soon! For now, add contacts one by one.",
-            parse_mode="Markdown"
-        )
-        
+
+        # Run bulk import
+        from services.bulk_import import get_bulk_import_service
+        service = get_bulk_import_service()
+        result = await service.import_file(bytes(file_bytes), file_name)
+
+        # Build result report
+        report = f"""✅ Import Complete!
+
+📊 Results:
+• Total rows: {result.total_rows}
+• Added: {result.successful}
+• Updated: {result.updated}
+• Skipped: {result.skipped}
+• Failed: {result.failed}"""
+
+        if result.errors:
+            report += f"\n\n⚠️ Issues ({len(result.errors)}):\n"
+            for error in result.errors[:5]:  # Show first 5 errors
+                report += f"• {error}\n"
+            if len(result.errors) > 5:
+                report += f"...and {len(result.errors) - 5} more"
+
+        await status_msg.edit_text(report)
         tracker.end_operation(success=True)
-        
+
     except Exception as e:
         tracker.end_operation(success=False, error_message=str(e))
-        await update.message.reply_text(f"Error processing document: {str(e)}")
+        await update.message.reply_text(f"❌ Error processing document: {str(e)}")
 
 
 # ============================================================
