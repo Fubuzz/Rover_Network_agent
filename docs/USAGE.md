@@ -48,16 +48,58 @@ Take a photo of a business card and send it. The bot will use OCR to extract:
 - Phone
 - LinkedIn
 
-### Method 5: Bulk Import
+### Method 5: Bulk Import (CSV/Excel)
 
-Upload a CSV or TXT file with multiple contacts.
+Upload a CSV or Excel file to import multiple contacts at once.
 
-CSV format:
+**Supported Formats:**
+- CSV (.csv) - Comma-separated values
+- Excel (.xlsx, .xls) - Microsoft Excel files
+
+**How to Use:**
+1. Create a spreadsheet with contact data
+2. Make sure the first row contains headers
+3. Upload the file directly to the bot chat
+
+**Sample CSV format:**
 ```csv
-Name,Job Title,Company,Email,Phone
-John Doe,CEO,TechCorp,john@tech.com,555-0123
-Jane Smith,CTO,StartupXYZ,jane@startup.com,555-0456
+Name,Email,Company,Title,Phone,Type
+John Doe,john@techcorp.com,TechCorp,CEO,+1-555-0123,founder
+Jane Smith,jane@investco.com,InvestCo,Partner,,investor
+Bob Wilson,bob@acme.com,Acme Inc,CTO,+1-555-0456,founder
 ```
+
+**Flexible Header Detection:**
+
+The bot automatically recognizes various header names:
+
+| Field | Accepted Headers |
+|-------|------------------|
+| Name | Name, Full Name, Contact Name, First Name, Last Name |
+| Email | Email, E-mail, Email Address, Mail |
+| Company | Company, Organization, Firm, Org |
+| Title | Title, Job Title, Position, Role |
+| Phone | Phone, Mobile, Tel, Telephone, Cell |
+| LinkedIn | LinkedIn, LinkedIn URL, LinkedIn Profile |
+| Type | Type, Contact Type, Category, Classification |
+| Industry | Industry, Sector |
+| Notes | Notes, Note, Comments |
+| Address | Location, Address, City, Country |
+
+**Duplicate Handling:**
+- If a contact with the same email already exists → **Updates** the existing record
+- If a contact with the same name exists → **Updates** the existing record
+- New contacts → **Added** as new rows
+
+**Import Results:**
+
+After import, the bot reports:
+- Total rows processed
+- Contacts added (new)
+- Contacts updated (existing)
+- Contacts skipped (invalid)
+- Contacts failed (errors)
+- First 5 error messages (if any)
 
 ## Viewing Contacts
 
