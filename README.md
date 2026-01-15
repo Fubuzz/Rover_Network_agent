@@ -1,8 +1,16 @@
-# Donna - Your Network Nurturing Agent 💅
+# Rover - Your Network Nurturing Agent 🚀
 
-*"I'm Donna. I know everything, I remember everything, and I'm always three steps ahead."*
+*"Your AI-powered professional network manager"*
 
-A comprehensive Telegram bot with serious Donna Paulsen energy — powered by CrewAI for managing and nurturing your professional network. She stores contacts in Google Sheets, enriches data through web searches, classifies contacts automatically, and tracks all operations with built-in analytics. And she does it with style.
+A comprehensive Telegram bot powered by CrewAI for managing and nurturing your professional network. Stores contacts in Google Sheets, enriches data through web searches, matches Founders with Investors, and generates personalized outreach emails.
+
+**Version 2.1.0** | [Changelog](CHANGELOG.md)
+
+### What's New in 2.1.0
+- ✅ **Pydantic validation** for data integrity
+- ✅ **Fixed contact save bug** - duplicate emails no longer silently fail
+- ✅ **Fixed matchmaker errors** - markdown parsing issues resolved
+- ✅ **Sheet name constants** - explicit worksheet references
 
 ## Features
 
@@ -87,6 +95,13 @@ OPENAI_API_KEY=your_openai_key
 4. Save as `credentials.json` in the project root
 5. Share your Google Sheet with the service account email
 
+**Sheet Structure:**
+| Sheet | Name | Purpose |
+|-------|------|---------|
+| Sheet 1 | `contacts` | All network contacts (Founders, Investors, Enablers) |
+| Sheet 2 | `Matches` | Founder-Investor match pairs with scores |
+| Sheet 3 | `Drafts` | Email drafts for outreach |
+
 ### 5. Run the Bot
 
 ```bash
@@ -119,6 +134,16 @@ python main.py
 | `/stats by <attribute>` | Stats by attribute |
 | `/report <name>` | Detailed contact report |
 | `/export` | Export contacts to CSV |
+
+### Matchmaker & Outreach
+| Command | Description |
+|---------|-------------|
+| `/match` | Run matchmaker to pair Founders with Investors |
+| `/matches` | View all saved matches |
+| `/clear_matches` | Clear all matches |
+| `/draft` | Generate email drafts for high-quality matches |
+| `/drafts` | View all pending drafts |
+| `/send` | Send approved email drafts |
 
 ### Organization
 | Command | Description |

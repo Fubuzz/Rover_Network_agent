@@ -1,4 +1,58 @@
-# Changelog - Smart Conversation Flow Update
+# Changelog - Rover Network Agent
+
+## Version 2.1.0 - Pydantic Validation & Bug Fixes
+
+**Date:** 2026-01-15
+
+This update adds Pydantic validation for data integrity, fixes critical bugs with contact saving, and resolves Telegram markdown parsing errors.
+
+---
+
+### Bug Fixes
+
+1. **Fixed Silent Contact Save Failure**
+   - **Issue:** Contacts with duplicate emails were silently not saved, but bot reported success
+   - **Fix:** Smart duplicate detection now only blocks if same name AND same email
+   - Different people can share the same email (warns but allows)
+   - Proper error messages when save fails
+
+2. **Fixed Matchmaker Markdown Parsing Errors**
+   - **Issue:** "Can't parse entities: can't find end of the entity starting at byte offset 244"
+   - **Cause:** `<->` and `<>` characters were interpreted as HTML entities
+   - **Fix:** Replaced with unicode arrows (↔) and removed markdown parsing from all matchmaker messages
+
+### New Features
+
+1. **Pydantic Data Validation**
+   - Converted `Match` and `Draft` from dataclasses to Pydantic BaseModels
+   - Field validators for automatic data coercion and cleaning
+   - Match scores automatically clamped to 0-100 range
+   - Email validation and cleaning
+   - Placeholder text rejection in drafts
+
+2. **Sheet Name Constants**
+   - Added `CONTACTS_SHEET_NAME = "contacts"` (Sheet 1)
+   - Added `MATCHES_SHEET_NAME = "Matches"` (Sheet 2)
+   - Added `DRAFTS_SHEET_NAME = "Drafts"` (Sheet 3)
+   - All services now use constants instead of hardcoded strings
+
+3. **Tool Argument Schemas**
+   - `WriteMatchToolArgs` - Validates LLM output for match writing
+   - `WriteDraftToolArgs` - Validates LLM output for draft writing
+   - `ContactLookupArgs` - Validates contact lookup requests
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `data/schema.py` | Pydantic models, sheet constants, tool schemas |
+| `services/google_sheets.py` | Smart duplicate email check, sheet constants |
+| `services/agent_tools.py` | Better error feedback for save operations |
+| `services/matchmaker.py` | Unicode arrows, safer subject lines |
+| `handlers/matchmaker_handlers.py` | Plain text messages (no markdown parsing) |
+| `handlers/conversation_engine.py` | Updated save function signature |
+
+---
 
 ## Version 2.0.0 - Smarter Agent Update
 
