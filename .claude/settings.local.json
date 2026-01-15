@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3:*)",
+      "Bash(pkill:*)",
+      "Bash(pgrep:*)",
+      "Bash(python training/train_agent.py:*)",
+      "Bash(ls:*)",
+      "Bash(python test_conversation.py:*)",
+      "Bash(python main.py:*)",
+      "Bash(pip install:*)",
+      "Bash(python -c:*)",
+      "Bash(kill:*)",
+      "Bash(python -m py_compile:*)",
+      "Bash(python bot.py:*)",
+      "Bash(source venv/bin/activate)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}

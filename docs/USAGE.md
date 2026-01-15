@@ -1,0 +1,264 @@
+# Usage Guide
+
+This guide explains how to use the Telegram Network Nurturing Agent effectively.
+
+## Getting Started
+
+After setting up the bot, open Telegram and start a conversation with your bot.
+
+### Starting the Bot
+
+Send `/start` to receive a welcome message and overview of capabilities.
+
+Send `/help` to see all available commands.
+
+## Adding Contacts
+
+### Method 1: Command
+
+```
+/add John Doe, CEO at TechCorp, john@techcorp.com, +1-555-0123
+```
+
+### Method 2: Natural Language
+
+Just type contact information naturally:
+
+```
+I just met Sarah Johnson, she's the VP of Engineering at StartupXYZ. 
+Her email is sarah@startupxyz.com and LinkedIn is linkedin.com/in/sarahjohnson
+```
+
+The bot will parse the text and extract contact details.
+
+### Method 3: Voice Message
+
+Record a voice message describing the contact:
+
+> "Add a new contact, his name is Michael Chen, he's a partner at Sequoia Capital. 
+> I met him at the tech conference yesterday."
+
+### Method 4: Business Card Photo
+
+Take a photo of a business card and send it. The bot will use OCR to extract:
+- Name
+- Job title
+- Company
+- Email
+- Phone
+- LinkedIn
+
+### Method 5: Bulk Import
+
+Upload a CSV or TXT file with multiple contacts.
+
+CSV format:
+```csv
+Name,Job Title,Company,Email,Phone
+John Doe,CEO,TechCorp,john@tech.com,555-0123
+Jane Smith,CTO,StartupXYZ,jane@startup.com,555-0456
+```
+
+## Viewing Contacts
+
+### View Specific Contact
+```
+/view John Doe
+```
+
+Returns full contact card with all information.
+
+### List All Contacts
+```
+/list
+```
+
+Shows paginated list of all contacts.
+
+### Search Contacts
+```
+/search TechCorp
+/search founder
+/search New York
+```
+
+Searches across all fields.
+
+## Updating Contacts
+
+```
+/update John Doe email newemail@company.com
+/update John Doe phone +1-555-9999
+/update John Doe company NewCorp
+```
+
+## Enriching Contacts
+
+### Enrich a Contact
+```
+/enrich John Doe
+```
+
+Searches the web for:
+- LinkedIn profile
+- Company information
+- Recent news
+- Professional background
+
+### Research a Company
+```
+/research TechCorp
+```
+
+Returns company research with:
+- LinkedIn company page
+- Recent news
+- Key information
+
+### Find LinkedIn
+```
+/linkedin John Doe TechCorp
+```
+
+Searches specifically for LinkedIn profile.
+
+## Organization
+
+### Add Tags
+```
+/tag John Doe ai,startup,investor
+```
+
+### Add Notes
+```
+/note John Doe Met at AI Summit 2024, interested in B2B SaaS
+```
+
+### Set Reminders
+```
+/remind John Doe next week
+/remind Sarah Johnson January 15
+```
+
+## Statistics & Reports
+
+### General Statistics
+```
+/stats
+```
+
+Shows:
+- Total contacts
+- By classification
+- Top companies
+- Data completeness
+
+### Statistics by Attribute
+```
+/stats by company
+/stats by location
+/stats by classification
+```
+
+### Detailed Report
+```
+/report John Doe
+```
+
+Generates comprehensive report for a contact.
+
+### Network Insights
+```
+/report all
+```
+
+Generates overall network analysis.
+
+### Export Data
+```
+/export
+```
+
+Downloads all contacts as CSV file.
+
+## Analytics & Monitoring
+
+### Dashboard
+```
+/dashboard
+```
+
+Real-time system status showing:
+- System health
+- Today's operations
+- Success rate
+- Recent activity
+
+### Analytics
+```
+/analytics                    # Overview
+/analytics operations         # Operation stats
+/analytics features          # Feature usage
+/analytics performance       # Performance metrics
+/analytics export 30         # Export 30 days of data
+```
+
+### Evaluation
+```
+/eval                        # Summary
+/eval operations             # Operation evaluation
+/eval errors                 # Error analysis
+/eval quality                # Data quality metrics
+/eval agents                 # Agent performance
+```
+
+## Asking Questions
+
+Use `/ask` for natural language queries:
+
+```
+/ask Who works at TechCorp?
+/ask How many founders do I know?
+/ask Who did I add last week?
+/ask Show me contacts in San Francisco
+```
+
+## Tips & Best Practices
+
+### Adding Contacts
+1. Include as much information as possible
+2. Use the enrichment feature to fill gaps
+3. Voice messages work great for quick additions
+
+### Organizing
+1. Use consistent tag naming (lowercase, hyphens)
+2. Add meeting notes immediately
+3. Set follow-up reminders
+
+### Data Quality
+1. Check `/eval quality` regularly
+2. Enrich contacts with incomplete data
+3. Use the dashboard to monitor operations
+
+### Performance
+1. Use specific searches rather than browsing
+2. Export periodically for backup
+3. Monitor analytics for issues
+
+## Common Workflows
+
+### After a Meeting
+1. Add contact via voice or text
+2. Bot auto-classifies
+3. Add meeting notes: `/note Name discussed partnership opportunities`
+4. Set reminder: `/remind Name 2 weeks`
+
+### Research Before a Meeting
+1. View contact: `/view Name`
+2. Enrich if needed: `/enrich Name`
+3. Research company: `/research CompanyName`
+
+### Weekly Review
+1. Check dashboard: `/dashboard`
+2. Review stats: `/stats`
+3. Export if needed: `/export`

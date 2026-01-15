@@ -1,0 +1,142 @@
+{"messages": [{"role": "user", "content": "Add Mohamed Abaza as the head of growth at synapse analytics"}, {"role": "assistant", "content": "I've drafted Mohamed Abaza as Head of Growth at Synapse Analytics. I want to verify: is this the AI company in Egypt or the Microsoft product?"}]}
+{"messages": [{"role": "user", "content": "The one in Egypt."}, {"role": "assistant", "content": "Understood. Linked to Synapse Analytics (Egypt). I've auto-filled the description: 'AI company providing limitless analytics and credit scoring solutions.' Do you have his email?"}]}
+{"messages": [{"role": "user", "content": "Yes, mabaza@synapse-analytics.io"}, {"role": "assistant", "content": "Email saved for Mohamed Abaza: mabaza@synapse-analytics.io. Would you like me to find his LinkedIn?"}]}
+{"messages": [{"role": "user", "content": "Add Ahmed Abbas as the CRO of bank SAIB"}, {"role": "assistant", "content": "Added Ahmed Abbas, CRO at SAIB (Saudi Investment Bank). Industry: Banking. Do you have his contact details?"}]}
+{"messages": [{"role": "user", "content": "Add his type as enabler"}, {"role": "assistant", "content": "Updated Ahmed Abbas -> Contact Type: Enabler. What value does he offer?"}]}
+{"messages": [{"role": "user", "content": "And his email as aabbas@saib.com"}, {"role": "assistant", "content": "Updated Ahmed's email to aabbas@saib.com."}]}
+{"messages": [{"role": "user", "content": "Search for what SAIB bank does"}, {"role": "assistant", "content": "Searching SAIB Bank... SAIB offers wholesale, retail, and commercial banking. Updated 'Company Description'."}]}
+{"messages": [{"role": "user", "content": "Add Farook Hassan CEO at fimple"}, {"role": "assistant", "content": "Added Farook Hassan, CEO at Fimple. I don't know this company. Shall I research it?"}]}
+{"messages": [{"role": "user", "content": "go ahead"}, {"role": "assistant", "content": "Searching 'Fimple company'... Fimple is a cloud-based core banking platform. Location seems to be London/Istanbul. Correct?"}]}
+{"messages": [{"role": "user", "content": "its a company based in maadi egypt"}, {"role": "assistant", "content": "Correction noted. Updated Location: 'Maadi, Egypt'."}]}
+{"messages": [{"role": "user", "content": "Add Sarah from Apex Ventures. They write $500k checks."}, {"role": "assistant", "content": "Added Sarah at Apex Ventures. Classified: Investor (VC). Check Size: $500k. Any specific sectors?"}]}
+{"messages": [{"role": "user", "content": "They focus on Fintech and Healthtech."}, {"role": "assistant", "content": "Updated Investment Sectors: 'Fintech, Healthtech'. Do you have Sarah's full name?"}]}
+{"messages": [{"role": "user", "content": "Add Omar, Founder of Nawy. He is raising Series A."}, {"role": "assistant", "content": "Added Omar, Founder at Nawy. Classified: Founder. Stage: Series A. Goal: Fundraising. Marked as Priority."}]}
+{"messages": [{"role": "user", "content": "Add his LinkedIn"}, {"role": "assistant", "content": "Please provide the link or say 'Find it' to trigger a search."}]}
+{"messages": [{"role": "user", "content": "Find it"}, {"role": "assistant", "content": "Searching 'Omar Nawy LinkedIn'... Found: linkedin.com/in/omar-nawy. Profile updated."}]}
+{"messages": [{"role": "user", "content": "I met John Doe. He works at Google."}, {"role": "assistant", "content": "Added John Doe, Employee at Google. What is his title?"}]}
+{"messages": [{"role": "user", "content": "He is a Product Manager on Maps."}, {"role": "assistant", "content": "Updated Title: Product Manager. Team: Google Maps."}]}
+{"messages": [{"role": "user", "content": "Actually change his company to Waymo."}, {"role": "assistant", "content": "Context Update: Moved John Doe to Waymo. Industry: Autonomous Vehicles."}]}
+{"messages": [{"role": "user", "content": "Delete this contact."}, {"role": "assistant", "content": "Confirm deletion for John Doe (Waymo)?"}]}
+{"messages": [{"role": "user", "content": "Yes"}, {"role": "assistant", "content": "Contact deleted."}]}
+{"messages": [{"role": "user", "content": "Add Khaled from Algebra Ventures"}, {"role": "assistant", "content": "Added Khaled, Algebra Ventures. I recall Algebra is a VC firm. Marking as Investor. Correct?"}]}
+{"messages": [{"role": "user", "content": "Yes, he is a Partner."}, {"role": "assistant", "content": "Updated Title: Partner."}]}
+{"messages": [{"role": "user", "content": "Add note: Met at RiseUp summit."}, {"role": "assistant", "content": "Note added to Khaled's profile: 'Met at RiseUp summit'."}]}
+{"messages": [{"role": "user", "content": "Add Youssef, CTO of Pylon."}, {"role": "assistant", "content": "Added Youssef, CTO at Pylon. Shall I search for Pylon's details?"}]}
+{"messages": [{"role": "user", "content": "No, just add his email: y@pylon.io"}, {"role": "assistant", "content": "Email saved: y@pylon.io."}]}
+{"messages": [{"role": "user", "content": "Add his phone number 0100200300"}, {"role": "assistant", "content": "Phone saved for Youssef."}]}
+{"messages": [{"role": "user", "content": "Who is the CEO of Pylon?"}, {"role": "assistant", "content": "Searching 'Pylon CEO'... Result: Ahmed Ashour. Shall I add him as a new contact?"}]}
+{"messages": [{"role": "user", "content": "Yes"}, {"role": "assistant", "content": "Added Ahmed Ashour, CEO at Pylon."}]}
+{"messages": [{"role": "user", "content": "Add a contact for Tarek. He runs a dev house called Code95."}, {"role": "assistant", "content": "Added Tarek. Company: Code95. Role: Founder/CEO (implied by 'runs'). Type: Service Provider/Enabler."}]}
+{"messages": [{"role": "user", "content": "They do outsourcing for banks."}, {"role": "assistant", "content": "Updated Enabler Value Prop: 'Banking Outsourcing/Software Development'."}]}
+{"messages": [{"role": "user", "content": "Add Mai from Flat6Labs."}, {"role": "assistant", "content": "Added Mai, Flat6Labs. Known entity: Accelerator/VC. Role?"}]}
+{"messages": [{"role": "user", "content": "Program Manager."}, {"role": "assistant", "content": "Updated Title: Program Manager. Type: Enabler (Accelerator)."}]}
+{"messages": [{"role": "user", "content": "Add her email mai@flat6.com"}, {"role": "assistant", "content": "Email saved for Mai."}]}
+{"messages": [{"role": "user", "content": "Add Karim. He is an angel investor."}, {"role": "assistant", "content": "Added Karim. Type: Investor (Angel). Ticket size?"}]}
+{"messages": [{"role": "user", "content": "Usually $10k to $50k."}, {"role": "assistant", "content": "Updated Check Size: '$10k - $50k'."}]}
+{"messages": [{"role": "user", "content": "He likes logistics."}, {"role": "assistant", "content": "Updated Thesis: Logistics."}]}
+{"messages": [{"role": "user", "content": "Add Mostafa. VP Sales at Paymob."}, {"role": "assistant", "content": "Added Mostafa, VP Sales at Paymob. Sector: Fintech."}]}
+{"messages": [{"role": "user", "content": "Update his title to CCO."}, {"role": "assistant", "content": "Correction: Title updated to CCO (Chief Commercial Officer)."}]}
+{"messages": [{"role": "user", "content": "Find his LinkedIn please."}, {"role": "assistant", "content": "Searching 'Mostafa Paymob CCO LinkedIn'... Found: linkedin.com/in/mostafa-menessy. Saved."}]}
+{"messages": [{"role": "user", "content": "Add Hoda, Founder of Breadfast."}, {"role": "assistant", "content": "Added Hoda, Founder at Breadfast. Sector: E-commerce/Grocery."}]}
+{"messages": [{"role": "user", "content": "Wait, she is not the founder, she is Head of People."}, {"role": "assistant", "content": "Correction applied: Title changed to Head of People."}]}
+{"messages": [{"role": "user", "content": "Add a note: looking for HR software."}, {"role": "assistant", "content": "Note added: 'Looking for HR software'."}]}
+{"messages": [{"role": "user", "content": "I met a guy named Ali from Swvl."}, {"role": "assistant", "content": "Added Ali, Swvl. Title?"}]}
+{"messages": [{"role": "user", "content": "Don't know. Check LinkedIn."}, {"role": "assistant", "content": "I need a full name to search accurately. Do you have a last name?"}]}
+{"messages": [{"role": "user", "content": "Ali Halabi."}, {"role": "assistant", "content": "Searching 'Ali Halabi Swvl'... Found profile. Title: Director of Operations. Saved."}]}
+{"messages": [{"role": "user", "content": "Add Maged. He is a lawyer for startups."}, {"role": "assistant", "content": "Added Maged. Type: Enabler. Sub-type: Legal Counsel."}]}
+{"messages": [{"role": "user", "content": "Firm is Levari."}, {"role": "assistant", "content": "Updated Company: Levari."}]}
+{"messages": [{"role": "user", "content": "Add Rania from ITIDA."}, {"role": "assistant", "content": "Added Rania, ITIDA. Type: Government/Enabler."}]}
+{"messages": [{"role": "user", "content": "She manages the export program."}, {"role": "assistant", "content": "Updated Role description: 'Manages Export Program'."}]}
+{"messages": [{"role": "user", "content": "Add Seif. He is looking for a job."}, {"role": "assistant", "content": "Added Seif. Status: Job Seeker. What is his expertise?"}]}
+{"messages": [{"role": "user", "content": "Marketing."}, {"role": "assistant", "content": "Added Skill: Marketing."}]}
+{"messages": [{"role": "user", "content": "Add Zeinab from Microsoft."}, {"role": "assistant", "content": "Added Zeinab, Microsoft."}]}
+{"messages": [{"role": "user", "content": "She is the country manager."}, {"role": "assistant", "content": "Updated Title: Country Manager."}]}
+{"messages": [{"role": "user", "content": "Add her location: Cairo."}, {"role": "assistant", "content": "Location saved: Cairo."}]}
+{"messages": [{"role": "user", "content": "Add Tameer. CEO of InGame."}, {"role": "assistant", "content": "Added Tameer, CEO at InGame."}]}
+{"messages": [{"role": "user", "content": "What does InGame do?"}, {"role": "assistant", "content": "Searching 'InGame company'... It's a gamification platform for football fans. Description updated."}]}
+{"messages": [{"role": "user", "content": "Add his email t@ingame.com"}, {"role": "assistant", "content": "Email saved."}]}
+{"messages": [{"role": "user", "content": "Add Noha. VP Product at Instabug."}, {"role": "assistant", "content": "Added Noha, VP Product at Instabug."}]}
+{"messages": [{"role": "user", "content": "Actually she left. She is now at Twitter."}, {"role": "assistant", "content": "Updated Noha's Company: Twitter. Cleared old title. What is her new title?"}]}
+{"messages": [{"role": "user", "content": "Senior PM."}, {"role": "assistant", "content": "Updated Title: Senior PM."}]}
+{"messages": [{"role": "user", "content": "Add Sameh. He runs a podcast called 'Startup Egypt'."}, {"role": "assistant", "content": "Added Sameh. Company: Startup Egypt. Type: Media/Enabler."}]}
+{"messages": [{"role": "user", "content": "Add his phone 0123456789"}, {"role": "assistant", "content": "Phone saved."}]}
+{"messages": [{"role": "user", "content": "Add Yasmine. She is an investment associate at Sawari."}, {"role": "assistant", "content": "Added Yasmine. Title: Investment Associate. Company: Sawari Ventures. Type: Investor."}]}
+{"messages": [{"role": "user", "content": "Add her LinkedIn link.com/yas"}, {"role": "assistant", "content": "LinkedIn URL saved: link.com/yas."}]}
+{"messages": [{"role": "user", "content": "Add Mo. Founder of a stealth startup."}, {"role": "assistant", "content": "Added Mo. Company: Stealth Mode. Type: Founder."}]}
+{"messages": [{"role": "user", "content": "He needs backend engineers."}, {"role": "assistant", "content": "Added Note: 'Hiring Backend Engineers'."}]}
+{"messages": [{"role": "user", "content": "Add Hassan from Fawry."}, {"role": "assistant", "content": "Added Hassan, Fawry."}]}
+{"messages": [{"role": "user", "content": "He is the CFO."}, {"role": "assistant", "content": "Updated Title: CFO."}]}
+{"messages": [{"role": "user", "content": "Find the stock price of Fawry."}, {"role": "assistant", "content": "I am a networking assistant, but I can search that. Searching 'Fawry stock price'..."}]}
+{"messages": [{"role": "user", "content": "Add Sherif. He is a mentor at Endeavor."}, {"role": "assistant", "content": "Added Sherif. Organization: Endeavor. Type: Enabler (Mentor)."}]}
+{"messages": [{"role": "user", "content": "He is also the CEO of EgyTrans."}, {"role": "assistant", "content": "Updated: Primary Company EgyTrans (CEO). Secondary Role: Endeavor (Mentor)."}]}
+{"messages": [{"role": "user", "content": "Add Laila from AUC Angels."}, {"role": "assistant", "content": "Added Laila, AUC Angels. Type: Investor (Angel Group)."}]}
+{"messages": [{"role": "user", "content": "She manages the syndicate."}, {"role": "assistant", "content": "Updated Title: Syndicate Manager."}]}
+{"messages": [{"role": "user", "content": "Add Omar from Trella."}, {"role": "assistant", "content": "Added Omar, Trella. Industry: Logistics/Trucking."}]}
+{"messages": [{"role": "user", "content": "Search for Trella's latest funding."}, {"role": "assistant", "content": "Searching 'Trella funding news'... Found Series A $42M. Updated Company Funding."}]}
+{"messages": [{"role": "user", "content": "Add Fady. He is a UI designer freelancer."}, {"role": "assistant", "content": "Added Fady. Company: Freelance. Role: UI Designer. Type: Talent/Service Provider."}]}
+{"messages": [{"role": "user", "content": "Add his portfolio link fady.design"}, {"role": "assistant", "content": "Website saved: fady.design."}]}
+{"messages": [{"role": "user", "content": "Add Mona. She works at CBE."}, {"role": "assistant", "content": "Added Mona, CBE (Central Bank of Egypt). Type: Regulator/Government."}]}
+{"messages": [{"role": "user", "content": "Add note: careful with sensitive info."}, {"role": "assistant", "content": "Note added: 'Careful with sensitive info'."}]}
+{"messages": [{"role": "user", "content": "Add Ahmed. He is a student at GUC."}, {"role": "assistant", "content": "Added Ahmed. Organization: GUC. Status: Student."}]}
+{"messages": [{"role": "user", "content": "He wants an internship."}, {"role": "assistant", "content": "Added Goal: Internship."}]}
+{"messages": [{"role": "user", "content": "Add Salma. She is a recruiter."}, {"role": "assistant", "content": "Added Salma. Role: Recruiter. Agency or In-house?"}]}
+{"messages": [{"role": "user", "content": "She works at Talent 360."}, {"role": "assistant", "content": "Updated Company: Talent 360. Type: Enabler (Recruitment)."}]}
+{"messages": [{"role": "user", "content": "Add Hesham from Halan."}, {"role": "assistant", "content": "Added Hesham, Halan."}]}
+{"messages": [{"role": "user", "content": "Full name Hesham Wahby."}, {"role": "assistant", "content": "Updated Name: Hesham Wahby."}]}
+{"messages": [{"role": "user", "content": "Add his email hw@halan.com"}, {"role": "assistant", "content": "Email saved."}]}
+{"messages": [{"role": "user", "content": "Add a contact for the event organizer of Techne."}, {"role": "assistant", "content": "Added Contact. Unknown Name. Company: Techne Summit. Title: Organizer."}]}
+{"messages": [{"role": "user", "content": "Her name is Nihal."}, {"role": "assistant", "content": "Updated Name: Nihal."}]}
+{"messages": [{"role": "user", "content": "Add Ziad. He is a growth hacker."}, {"role": "assistant", "content": "Added Ziad. Role: Growth Hacker."}]}
+{"messages": [{"role": "user", "content": "Add his phone 0111"}, {"role": "assistant", "content": "Phone saved: 0111."}]}
+{"messages": [{"role": "user", "content": "Sorry phone is 0112."}, {"role": "assistant", "content": "Correction: Phone updated to 0112."}]}
+{"messages": [{"role": "user", "content": "Add Dina from Google Ireland."}, {"role": "assistant", "content": "Added Dina, Google. Location: Ireland."}]}
+{"messages": [{"role": "user", "content": "She is in Sales."}, {"role": "assistant", "content": "Updated Title: Sales."}]}
+{"messages": [{"role": "user", "content": "Add Gamal. He is a classic businessman."}, {"role": "assistant", "content": "Added Gamal. Type: Business Owner. Industry?"}]}
+{"messages": [{"role": "user", "content": "Textiles."}, {"role": "assistant", "content": "Updated Industry: Textiles."}]}
+{"messages": [{"role": "user", "content": "Add Sara. She is a journalist at Forbes Middle East."}, {"role": "assistant", "content": "Added Sara. Company: Forbes ME. Type: Media."}]}
+{"messages": [{"role": "user", "content": "Add note: she writes about fintech."}, {"role": "assistant", "content": "Note added."}]}
+{"messages": [{"role": "user", "content": "Add Tarek from Glamera."}, {"role": "assistant", "content": "Added Tarek, Glamera."}]}
+{"messages": [{"role": "user", "content": "They do booking for salons."}, {"role": "assistant", "content": "Updated Description: Salon booking platform."}]}
+{"messages": [{"role": "user", "content": "Add his email t@glamera.com"}, {"role": "assistant", "content": "Email saved."}]}
+{"messages": [{"role": "user", "content": "Add Nour. She is a backend dev."}, {"role": "assistant", "content": "Added Nour. Role: Backend Developer."}]}
+{"messages": [{"role": "user", "content": "She works at Rabbit."}, {"role": "assistant", "content": "Updated Company: Rabbit."}]}
+{"messages": [{"role": "user", "content": "Add Yasser. He is a consultant at McK."}, {"role": "assistant", "content": "Added Yasser. Company: McKinsey & Company."}]}
+{"messages": [{"role": "user", "content": "Add his LinkedIn link.com/yasser"}, {"role": "assistant", "content": "LinkedIn saved."}]}
+{"messages": [{"role": "user", "content": "Add Ghada. She runs a charity."}, {"role": "assistant", "content": "Added Ghada. Type: Non-Profit."}]}
+{"messages": [{"role": "user", "content": "Name is Misr El Kheir."}, {"role": "assistant", "content": "Updated Organization: Misr El Kheir."}]}
+{"messages": [{"role": "user", "content": "Add Waleed. VP Engineering at Uber."}, {"role": "assistant", "content": "Added Waleed, VP Engineering at Uber."}]}
+{"messages": [{"role": "user", "content": "He is based in Amsterdam."}, {"role": "assistant", "content": "Updated Location: Amsterdam."}]}
+{"messages": [{"role": "user", "content": "Add Marwan. He is a crypto trader."}, {"role": "assistant", "content": "Added Marwan. Industry: Web3/Crypto."}]}
+{"messages": [{"role": "user", "content": "Add note: met at a meetup."}, {"role": "assistant", "content": "Note added."}]}
+{"messages": [{"role": "user", "content": "Add Nancy from Sequence Ventures."}, {"role": "assistant", "content": "Added Nancy, Sequence Ventures. Type: Investor."}]}
+{"messages": [{"role": "user", "content": "They invest in deep tech."}, {"role": "assistant", "content": "Updated Thesis: Deep Tech."}]}
+{"messages": [{"role": "user", "content": "Add Hatem. CEO of Stick."}, {"role": "assistant", "content": "Added Hatem, CEO at Stick."}]}
+{"messages": [{"role": "user", "content": "What is Stick?"}, {"role": "assistant", "content": "Searching 'Stick company'... It's a noodle restaurant chain. Updated Description."}]}
+{"messages": [{"role": "user", "content": "No, Stick the payments company."}, {"role": "assistant", "content": "Correction: Stick (Payments). Industry: Fintech. Description updated."}]}
+{"messages": [{"role": "user", "content": "Save"}, {"role": "assistant", "content": "I've saved Ahmed Amr to your network! Context cleared. Ready for a new contact or any other request."}]}
+{"messages": [{"role": "user", "content": "Add Yousra Abdelatif"}, {"role": "assistant", "content": "Starting fresh contact: Yousra Abdelatif. What details would you like to add? (Previous contact Ahmed Amr is now LOCKED and saved.)"}]}
+{"messages": [{"role": "user", "content": "As the CMO of Sprintly Partners"}, {"role": "assistant", "content": "Updated Yousra Abdelatif: Title: CMO, Company: Sprintly Partners."}]}
+{"messages": [{"role": "user", "content": "Her type is enabler"}, {"role": "assistant", "content": "Updated Yousra Abdelatif -> Contact Type: Enabler. (Note: This applies to the current contact Yousra, not any previous contacts.)"}]}
+{"messages": [{"role": "user", "content": "And she's based in San Francisco"}, {"role": "assistant", "content": "Updated Yousra Abdelatif: Location: San Francisco."}]}
+{"messages": [{"role": "user", "content": "Save John."}, {"role": "assistant", "content": "Saved John to your network. Context is now CLEARED. John's record is locked."}]}
+{"messages": [{"role": "user", "content": "Add Sarah."}, {"role": "assistant", "content": "New contact started: Sarah. (Previous contact John is saved and locked - no further updates allowed.) What details for Sarah?"}]}
+{"messages": [{"role": "user", "content": "His email is john@company.com"}, {"role": "assistant", "content": "I notice you said 'his' but the current contact is Sarah (female name). Did you mean Sarah's email, or do you want to update a different contact? I will NOT apply this to John as his record is locked after save."}]}
+{"messages": [{"role": "user", "content": "Sorry, her email is sarah@company.com"}, {"role": "assistant", "content": "Updated Sarah's email: sarah@company.com."}]}
+{"messages": [{"role": "user", "content": "Done with Omar."}, {"role": "assistant", "content": "Saved Omar. His record is now LOCKED. What would you like to do next?"}]}
+{"messages": [{"role": "user", "content": "Add Layla as the CEO of TechCorp"}, {"role": "assistant", "content": "New contact: Layla, CEO at TechCorp. (Omar's record is locked.) Any additional details for Layla?"}]}
+{"messages": [{"role": "user", "content": "His phone is 012345"}, {"role": "assistant", "content": "Current contact is Layla. You said 'his' but Layla appears to be female. Clarify: Is this Layla's phone, or did you mean someone else? I cannot update Omar as his record was saved and locked."}]}
+{"messages": [{"role": "user", "content": "Her phone, sorry. 012345"}, {"role": "assistant", "content": "Updated Layla's phone: 012345."}]}
+{"messages": [{"role": "user", "content": "Save this contact"}, {"role": "assistant", "content": "Saved Layla to your network. Context CLEARED. Ready for new contact."}]}
+{"messages": [{"role": "user", "content": "Type is investor"}, {"role": "assistant", "content": "No active contact. Your last contact (Layla) was already saved and locked. Would you like to: 1) Add a new contact, or 2) Search for an existing contact to update?"}]}
+{"messages": [{"role": "user", "content": "Finish with Ahmed"}, {"role": "assistant", "content": "Saved Ahmed. Record LOCKED. Context cleared. What's next?"}]}
+{"messages": [{"role": "user", "content": "Add Fatima from Careem"}, {"role": "assistant", "content": "New contact: Fatima at Careem. Ahmed is saved and CANNOT be modified. Details for Fatima?"}]}
+{"messages": [{"role": "user", "content": "He is the VP of Engineering"}, {"role": "assistant", "content": "You said 'he' but current contact is Fatima. I'll assume you meant Fatima. Updated: VP of Engineering at Careem. Please confirm or correct."}]}
+{"messages": [{"role": "user", "content": "Yes that's correct for Fatima"}, {"role": "assistant", "content": "Confirmed: Fatima, VP of Engineering at Careem."}]}
+{"messages": [{"role": "user", "content": "That's all for Mohamed"}, {"role": "assistant", "content": "Saved Mohamed. HARD RESET: Context cleared, Mohamed is locked. Ready for next action."}]}
+{"messages": [{"role": "user", "content": "email is mo@test.com"}, {"role": "assistant", "content": "No active contact selected. Mohamed was just saved and locked. To update Mohamed, please say 'Update Mohamed'. Or say 'Add [name]' to start a new contact."}]}
+{"messages": [{"role": "user", "content": "Add Nadia"}, {"role": "assistant", "content": "New contact: Nadia. What details would you like to add?"}]}
+{"messages": [{"role": "user", "content": "email is mo@test.com"}, {"role": "assistant", "content": "Updated Nadia's email: mo@test.com. (Note: This email looks like it might belong to Mohamed. Confirm this is for Nadia?)"}]}
+{"messages": [{"role": "user", "content": "No that was for Mohamed"}, {"role": "assistant", "content": "Mohamed's record is LOCKED (already saved). I cannot update it. Please provide Nadia's correct email, or if you need to fix Mohamed, say 'Update Mohamed' to explicitly unlock him."}]}
+{"messages": [{"role": "user", "content": "Update Mohamed"}, {"role": "assistant", "content": "Reopening Mohamed's record. What would you like to update?"}]}
+{"messages": [{"role": "user", "content": "email is mo@test.com"}, {"role": "assistant", "content": "Updated Mohamed's email: mo@test.com. (Nadia is on hold.)"}]}
+{"messages": [{"role": "user", "content": "Save"}, {"role": "assistant", "content": "Saved Mohamed. Returning to Nadia. What details for Nadia?"}]}
