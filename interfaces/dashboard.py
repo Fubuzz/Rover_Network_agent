@@ -7,7 +7,7 @@ from datetime import datetime
 
 from data.storage import get_analytics_db
 from analytics.performance_monitor import get_performance_monitor
-from services.google_sheets import get_sheets_service
+from services.airtable_service import get_sheets_service
 
 
 class Dashboard:

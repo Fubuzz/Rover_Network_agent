@@ -274,15 +274,27 @@ async def handle_document_message(update: Update, context: ContextTypes.DEFAULT_
             tracker.end_operation(success=True)
             return
 
-        # Send processing message
-        status_msg = await update.message.reply_text(
-            f"📥 Processing {file_name}...\n\n"
-            "This may take a moment for large files."
-        )
-
-        # Download file
+        # Download file first to get size info
         file = await context.bot.get_file(document.file_id)
         file_bytes = await file.download_as_bytearray()
+
+        # Estimate row count for large file warning
+        file_size_kb = len(file_bytes) / 1024
+        estimated_rows = int(file_size_kb / 0.1)  # Rough estimate: ~100 bytes per row
+
+        # Send processing message
+        if estimated_rows > 500:
+            status_msg = await update.message.reply_text(
+                f"📥 Processing {file_name}...\n\n"
+                f"📊 Large file detected (~{estimated_rows:,} rows estimated)\n"
+                f"⏱️ This may take several minutes due to API rate limits.\n\n"
+                f"I'll update you when it's done!"
+            )
+        else:
+            status_msg = await update.message.reply_text(
+                f"📥 Processing {file_name}...\n\n"
+                "This may take a moment."
+            )
 
         # Run bulk import
         from services.bulk_import import get_bulk_import_service

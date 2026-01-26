@@ -1,19 +1,49 @@
 """
-Enrichment service using SerpAPI for web searches.
+Enrichment service using Tavily for web searches.
 Enhanced with comprehensive contact data enrichment.
 """
 
 import logging
 import json
 import re
+import time
 from datetime import datetime
+from functools import wraps
 from typing import Optional, Dict, List, Any
-from serpapi import GoogleSearch
 
 from config import APIConfig
 from services.ai_service import get_ai_service
 
 logger = logging.getLogger('network_agent')
+
+
+def retry_with_backoff(max_retries: int = 3, backoff_factor: float = 2.0, exceptions: tuple = (Exception,)):
+    """
+    Decorator for retrying API calls with exponential backoff.
+
+    Args:
+        max_retries: Maximum number of retry attempts
+        backoff_factor: Multiplier for wait time between retries
+        exceptions: Tuple of exception types to catch and retry
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            last_exception = None
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except exceptions as e:
+                    last_exception = e
+                    if attempt < max_retries - 1:
+                        sleep_time = backoff_factor ** attempt
+                        logger.warning(f"[RETRY] Attempt {attempt + 1}/{max_retries} failed for {func.__name__}: {e}")
+                        logger.warning(f"[RETRY] Retrying in {sleep_time}s...")
+                        time.sleep(sleep_time)
+            logger.error(f"[RETRY] All {max_retries} attempts failed for {func.__name__}")
+            raise last_exception
+        return wrapper
+    return decorator
 
 # Enrichment field definitions
 ENRICHMENT_FIELDS = [
@@ -29,10 +59,11 @@ class EnrichmentService:
     """Service for enriching contact data through web searches."""
 
     def __init__(self):
-        self.api_key = APIConfig.SERPAPI_KEY
+        self.api_key = APIConfig.TAVILY_API_KEY
         self._ai_service = None
         self._api_valid = None  # Track if API key is valid
         self._last_error = None
+        self._tavily_client = None
 
     @property
     def ai_service(self):
@@ -40,10 +71,24 @@ class EnrichmentService:
             self._ai_service = get_ai_service()
         return self._ai_service
 
+    @property
+    def tavily_client(self):
+        """Lazy-load Tavily client."""
+        if self._tavily_client is None and self.api_key:
+            try:
+                from tavily import TavilyClient
+                self._tavily_client = TavilyClient(api_key=self.api_key)
+            except ImportError:
+                logger.error("tavily-python not installed. Run: pip install tavily-python")
+            except Exception as e:
+                logger.error(f"Failed to initialize Tavily client: {e}")
+        return self._tavily_client
+
+    @retry_with_backoff(max_retries=3, backoff_factor=2.0, exceptions=(ConnectionError, TimeoutError, Exception))
     def _search(self, query: str, num_results: int = 10) -> List[Dict]:
-        """Perform a Google search using SerpAPI."""
+        """Perform a web search using Tavily with automatic retry on failure."""
         if not self.api_key:
-            logger.warning("SerpAPI key not configured")
+            logger.warning("Tavily API key not configured")
             self._last_error = "API key not configured"
             return []
 
@@ -51,50 +96,46 @@ class EnrichmentService:
         if self._api_valid is False:
             return []
 
+        if not self.tavily_client:
+            self._last_error = "Tavily client not initialized"
+            return []
+
         try:
-            search = GoogleSearch({
-                "q": query,
-                "api_key": self.api_key,
-                "num": num_results
-            })
+            response = self.tavily_client.search(
+                query=query,
+                max_results=num_results,
+                include_answer=False
+            )
 
-            results = search.get_dict()
-
-            # Check for API errors
-            if "error" in results:
-                error_msg = results.get("error", "Unknown error")
-                logger.error(f"SerpAPI error: {error_msg}")
-                self._last_error = error_msg
-                if "Invalid API key" in error_msg:
-                    self._api_valid = False
-                return []
-
+            results = response.get("results", [])
             self._api_valid = True
-            organic_results = results.get("organic_results", [])
 
-            logger.info(f"SerpAPI search '{query}' returned {len(organic_results)} results")
+            logger.info(f"Tavily search '{query}' returned {len(results)} results")
 
             return [
                 {
                     "title": r.get("title", ""),
-                    "link": r.get("link", ""),
-                    "snippet": r.get("snippet", ""),
-                    "source": r.get("source", "")
+                    "link": r.get("url", ""),
+                    "snippet": r.get("content", ""),
+                    "source": r.get("url", "").split("/")[2] if r.get("url") else ""
                 }
-                for r in organic_results
+                for r in results
             ]
 
         except Exception as e:
-            logger.error(f"SerpAPI search error: {e}")
-            self._last_error = str(e)
+            error_msg = str(e)
+            logger.error(f"Tavily search error: {error_msg}")
+            self._last_error = error_msg
+            if "Invalid API key" in error_msg or "401" in error_msg:
+                self._api_valid = False
             return []
 
     def get_last_error(self) -> Optional[str]:
-        """Get the last error message from SerpAPI."""
+        """Get the last error message from Tavily."""
         return self._last_error
 
     def is_available(self) -> bool:
-        """Check if SerpAPI is available and working."""
+        """Check if Tavily is available and working."""
         return self._api_valid is not False and bool(self.api_key)
     
     def search_person(self, name: str, company: str = None) -> List[Dict]:

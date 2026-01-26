@@ -35,51 +35,27 @@ class TelegramConfig:
         return True
 
 
-class GoogleSheetsConfig:
-    """Google Sheets configuration."""
-    SHEETS_URL: str = os.getenv("GOOGLE_SHEETS_URL", "")
-    CREDENTIALS_FILE: str = os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials.json")
-    
-    # Sheet column definitions
-    CONTACT_COLUMNS = [
-        "Name",
-        "Job Title",
-        "Company",
-        "Phone",
-        "Email",
-        "LinkedIn URL",
-        "Location",
-        "Classification",
-        "Tags",
-        "Notes",
-        "Last Contacted",
-        "Created Date",
-        "Enriched Data",
-        "Source"
-    ]
-    
+class AirtableConfig:
+    """Airtable configuration."""
+    AIRTABLE_PAT: str = os.getenv("AIRTABLE_PAT", "")
+    AIRTABLE_BASE_ID: str = os.getenv("AIRTABLE_BASE_ID", "")
+    AIRTABLE_CONTACTS_TABLE: str = os.getenv("AIRTABLE_CONTACTS_TABLE", "Contacts")
+    AIRTABLE_MATCHES_TABLE: str = os.getenv("AIRTABLE_MATCHES_TABLE", "Matches")
+    AIRTABLE_DRAFTS_TABLE: str = os.getenv("AIRTABLE_DRAFTS_TABLE", "Drafts")
+
     @classmethod
     def validate(cls) -> bool:
-        """Validate Google Sheets configuration."""
-        if not cls.SHEETS_URL:
-            raise ValueError("GOOGLE_SHEETS_URL is required")
+        """Validate Airtable configuration."""
+        if not cls.AIRTABLE_PAT:
+            raise ValueError("AIRTABLE_PAT is required")
+        if not cls.AIRTABLE_BASE_ID:
+            raise ValueError("AIRTABLE_BASE_ID is required")
         return True
-    
-    @classmethod
-    def get_sheet_id(cls) -> Optional[str]:
-        """Extract sheet ID from URL."""
-        if not cls.SHEETS_URL:
-            return None
-        # Extract ID from URL like: https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit
-        parts = cls.SHEETS_URL.split("/d/")
-        if len(parts) > 1:
-            return parts[1].split("/")[0]
-        return None
 
 
 class APIConfig:
     """API Keys configuration."""
-    SERPAPI_KEY: str = os.getenv("SERPAPI_KEY", "")
+    TAVILY_API_KEY: str = os.getenv("TAVILY_API_KEY", "")
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     
@@ -123,7 +99,7 @@ class AIConfig:
     GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
     
     # Default model selection (openai or gemini)
-    DEFAULT_PROVIDER: str = os.getenv("AI_PROVIDER", "openai")
+    DEFAULT_PROVIDER: str = os.getenv("AI_PROVIDER", "gemini")
     DEFAULT_MODEL: str = OPENAI_MODEL if DEFAULT_PROVIDER == "openai" else GEMINI_MODEL
     
     # Model parameters
@@ -196,7 +172,7 @@ def validate_all_configs() -> bool:
     """Validate all required configurations."""
     try:
         TelegramConfig.validate()
-        GoogleSheetsConfig.validate()
+        AirtableConfig.validate()
         APIConfig.validate()
         return True
     except ValueError as e:
@@ -211,12 +187,15 @@ def get_config_summary() -> dict:
             "bot_name": TelegramConfig.BOT_NAME,
             "token_configured": bool(TelegramConfig.BOT_TOKEN),
         },
-        "google_sheets": {
-            "url_configured": bool(GoogleSheetsConfig.SHEETS_URL),
-            "sheet_id": GoogleSheetsConfig.get_sheet_id(),
+        "airtable": {
+            "pat_configured": bool(AirtableConfig.AIRTABLE_PAT),
+            "base_id": AirtableConfig.AIRTABLE_BASE_ID,
+            "contacts_table": AirtableConfig.AIRTABLE_CONTACTS_TABLE,
+            "matches_table": AirtableConfig.AIRTABLE_MATCHES_TABLE,
+            "drafts_table": AirtableConfig.AIRTABLE_DRAFTS_TABLE,
         },
         "apis": {
-            "serpapi_configured": bool(APIConfig.SERPAPI_KEY),
+            "tavily_configured": bool(APIConfig.TAVILY_API_KEY),
             "gemini_configured": bool(APIConfig.GEMINI_API_KEY),
             "openai_configured": bool(APIConfig.OPENAI_API_KEY),
         },

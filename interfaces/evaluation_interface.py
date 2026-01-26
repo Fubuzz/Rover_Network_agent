@@ -122,7 +122,7 @@ class EvaluationInterface:
     
     def get_data_quality_metrics(self) -> Dict[str, Any]:
         """Get data quality metrics from recent operations."""
-        from services.google_sheets import get_sheets_service
+        from services.airtable_service import get_sheets_service
         
         try:
             sheets = get_sheets_service()

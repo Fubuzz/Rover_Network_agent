@@ -5,7 +5,7 @@ Reporting Agent for generating reports and analytics.
 from crewai import Agent
 from typing import List
 
-from tools.google_sheets_tool import GoogleSheetsStatsTool, GoogleSheetsSearchTool
+from tools.airtable_tool import AirtableStatsTool, AirtableSearchTool
 from tools.ai_tool import AIGenerateResponseTool
 
 
@@ -13,8 +13,8 @@ def create_reporting_agent() -> Agent:
     """Create the Reporting Agent."""
     
     tools = [
-        GoogleSheetsStatsTool(),
-        GoogleSheetsSearchTool(),
+        AirtableStatsTool(),
+        AirtableSearchTool(),
         AIGenerateResponseTool()
     ]
     
@@ -35,7 +35,7 @@ You understand what metrics are most valuable for network management and can pro
 def get_reporting_agent_tools() -> List:
     """Get the list of tools for the reporting agent."""
     return [
-        GoogleSheetsStatsTool(),
-        GoogleSheetsSearchTool(),
+        AirtableStatsTool(),
+        AirtableSearchTool(),
         AIGenerateResponseTool()
     ]

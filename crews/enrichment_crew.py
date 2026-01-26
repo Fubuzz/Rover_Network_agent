@@ -18,7 +18,7 @@ from agents.data_enrichment_agent import (
 from agents.evaluation_agent import create_evaluation_agent
 from agents.contact_agent import create_contact_agent
 from services.enrichment import get_enrichment_service
-from services.google_sheets import get_sheets_service
+from services.airtable_service import get_sheets_service
 
 
 class EnrichmentCrew:

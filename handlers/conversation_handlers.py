@@ -6,7 +6,7 @@ from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler
 
 from services.ai_service import get_ai_service
-from services.google_sheets import get_sheets_service
+from services.airtable_service import get_sheets_service
 from utils.constants import MESSAGES, COMMANDS
 from analytics.tracker import get_tracker
 

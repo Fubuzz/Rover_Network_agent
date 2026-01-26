@@ -8,7 +8,7 @@ import time
 
 from crews.contact_crew import get_contact_crew
 from crews.input_processing_crew import get_input_processing_crew
-from services.google_sheets import get_sheets_service
+from services.airtable_service import get_sheets_service
 from services.local_storage import get_local_storage
 from analytics.tracker import get_tracker
 from data.schema import OperationType
@@ -21,7 +21,7 @@ def get_storage():
     try:
         sheets = get_sheets_service()
         sheets._ensure_initialized()
-        return sheets, "google_sheets"
+        return sheets, "airtable"
     except Exception:
         return get_local_storage(), "local"
 

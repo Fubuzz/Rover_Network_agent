@@ -11,10 +11,13 @@ from typing import Optional, Dict, Any
 
 from services.conversation_ai import analyze_message, Intent, ConversationResult
 from services.contact_memory import get_memory_service, ConversationState
-from services.google_sheets import get_sheets_service
+from services.airtable_service import get_sheets_service
 from services.local_storage import get_local_storage
 from services.enrichment import get_enrichment_service
+from crews.researcher_crew import get_researcher_crew
+from handlers.enrichment_handlers import format_enrichment_result
 from data.schema import Contact
+from utils.text_cleaner import sanitize_input
 
 
 # ============================================================
@@ -27,15 +30,20 @@ def save_contact_to_storage(contact: Contact) -> tuple[bool, str, str]:
         sheets = get_sheets_service()
         sheets._ensure_initialized()
         if sheets.add_contact(contact):
-            return True, "google_sheets", ""
+            return True, "airtable", ""
         else:
             # add_contact returned False - check why
             existing = sheets.get_contact_by_name(contact.name)
             if existing:
-                return False, "", f"Contact '{contact.name}' already exists."
-            return False, "", f"Could not save '{contact.name}' - check for duplicate email."
+                return False, "", f"Contact '{contact.name}' already exists. Use update instead."
+            # Check if email exists on another contact
+            if contact.email:
+                email_match = sheets.find_contact_by_email(contact.email)
+                if email_match:
+                    return False, "", f"Email {contact.email} is already used by '{email_match.name}'."
+            return False, "", f"Could not save '{contact.name}'. Please try again."
     except Exception as e:
-        print(f"Google Sheets error: {e}")
+        print(f"Airtable error: {e}")
 
     try:
         local = get_local_storage()
@@ -100,42 +108,42 @@ def find_potential_duplicate(name: str = None, email: str = None, phone: str = N
     """
     Find a potential duplicate contact by name, email, or phone.
     Returns the existing contact if found, None otherwise.
+
+    Only matches on:
+    - Exact name match (case insensitive)
+    - Exact email match
+    - Exact phone match (normalized)
+
+    Does NOT do fuzzy first-name matching to avoid false positives.
     """
     try:
         sheets = get_sheets_service()
         sheets._ensure_initialized()
 
-        # Check by exact name match first
+        # Check by exact name match only
         if name:
             existing = sheets.get_contact_by_name(name)
             if existing:
                 return existing
 
-            # Check for similar names (fuzzy match - first name only)
-            name_parts = name.lower().split()
-            if name_parts:
-                first_name = name_parts[0]
-                # Search for contacts with same first name
-                matches = sheets.search_contacts(first_name)
+        # Check by exact email match
+        if email and email.strip():
+            existing = sheets.find_contact_by_email(email)
+            if existing:
+                return existing
+
+        # Check by phone (exact match on normalized digits)
+        if phone:
+            normalized_phone = ''.join(c for c in phone if c.isdigit())
+            if len(normalized_phone) >= 7:
+                # Search and verify exact match
+                matches = sheets.search_contacts(normalized_phone[-7:])
                 if matches:
                     for match in matches:
-                        if match.name and match.name.lower().startswith(first_name):
-                            return match
-
-        # Check by email
-        if email:
-            matches = sheets.search_contacts(email)
-            if matches:
-                return matches[0]
-
-        # Check by phone
-        if phone:
-            # Normalize phone for comparison (remove spaces, dashes)
-            normalized_phone = ''.join(c for c in phone if c.isdigit())
-            if len(normalized_phone) >= 7:  # At least 7 digits
-                matches = sheets.search_contacts(normalized_phone[-7:])  # Last 7 digits
-                if matches:
-                    return matches[0]
+                        if match.phone:
+                            match_normalized = ''.join(c for c in match.phone if c.isdigit())
+                            if match_normalized[-7:] == normalized_phone[-7:]:
+                                return match
 
     except Exception as e:
         print(f"Duplicate check error: {e}")
@@ -752,139 +760,180 @@ async def handle_help() -> str:
 
 
 async def handle_search(user_id: str, result: ConversationResult, original_message: str = "") -> str:
-    """Handle search/enrichment requests."""
+    """Handle search/enrichment requests using the dedicated Researcher Agent."""
     memory = get_memory_service()
     enrichment = get_enrichment_service()
 
     # Get current contact if any
     current = memory.get_current_contact(user_id) or memory.get_pending_contact(user_id)
 
-    # Extract what to search for
-    search_query = None
-    company_to_search = None
-
-    # Check if they mentioned a company name in entities
-    if result.entities.get('company'):
-        company_to_search = result.entities.get('company')
-
-    # Use the original message for pattern matching (not AI response)
+    # Use the original message for pattern matching
     msg_lower = original_message.lower() if original_message else ""
 
-    # Try to extract what they want to search - order matters!
-    search_patterns = [
-        # "search what fimple does" -> "fimple"
-        r"search (?:for )?(?:exactly )?what (.+?) (?:does|is|are|do)",
-        # "search for info on fimple" -> "fimple"
-        r"search (?:for )?(?:info )?(?:on |about )(.+)",
-        # "look up fimple" -> "fimple"
-        r"look up (.+)",
-        # "find out about fimple" -> "fimple"
-        r"find (?:out )?(?:about )?(.+)",
-        # "what can you find about fimple" -> "fimple"
-        r"what (?:can you find|do you know) about (.+)",
-        # Last resort: "search fimple" -> "fimple"
-        r"search (?:for )?(.+)",
-    ]
+    # Detect search type: LinkedIn, Person, Company, or General
+    search_type = "general"
+    search_query = None
+    person_name = None
+    company_name = None
 
-    for pattern in search_patterns:
+    # Check for LinkedIn-specific searches
+    linkedin_patterns = [
+        r"(?:find|search|get|look up|show me).*linkedin.*(?:for|of|on)?\s*([a-zA-Z\s]+)",
+        r"([a-zA-Z\s]+?)(?:'s|s)?\s*linkedin",
+        r"linkedin.*(?:for|of)\s*([a-zA-Z\s]+)",
+    ]
+    for pattern in linkedin_patterns:
         match = re.search(pattern, msg_lower)
         if match:
-            search_query = match.group(1).strip()
-            # Clean up common words that shouldn't be in search
-            search_query = re.sub(r'^(what|exactly|info on|info about|about)\s+', '', search_query)
-            search_query = re.sub(r'\s+(does|is|are|do|and add it).*$', '', search_query)
-            if search_query:
+            search_type = "linkedin"
+            person_name = match.group(1).strip()
+            # Clean up common words
+            person_name = re.sub(r'^(for|of|on|about|any|the)\s+', '', person_name)
+            person_name = re.sub(r'\s+(profile|page|url|link)$', '', person_name)
+            break
+
+    # Check for person-specific searches
+    if search_type == "general":
+        person_patterns = [
+            r"(?:search|find|look up|research).*(?:info|information|details|background).*(?:on|about|for)\s+([a-zA-Z\s]+)",
+            r"(?:search|find|look up|research)\s+(?:any\s+)?(?:info|information)?\s*(?:on|about|for)\s+([a-zA-Z\s]+)",
+            r"(?:who is|tell me about)\s+([a-zA-Z\s]+)",
+        ]
+        for pattern in person_patterns:
+            match = re.search(pattern, msg_lower)
+            if match:
+                query = match.group(1).strip()
+                # Check if it looks like a person name (has space, or capitalized)
+                if ' ' in query or (original_message and any(c.isupper() for c in original_message)):
+                    search_type = "person"
+                    person_name = query
+                    break
+
+    # Check for company-specific searches
+    if search_type == "general":
+        company_patterns = [
+            r"(?:search|find|look up|research).*(?:what|about)?\s*([a-zA-Z\s]+)\s*(?:does|do|is|company|startup)",
+            r"(?:what does|what do|what is)\s+([a-zA-Z\s]+)\s+(?:do|does|provide|offer)",
+            r"(?:search|find).*company.*(?:called|named)?\s*([a-zA-Z\s]+)",
+        ]
+        for pattern in company_patterns:
+            match = re.search(pattern, msg_lower)
+            if match:
+                search_type = "company"
+                company_name = match.group(1).strip()
                 break
 
-    # If no explicit search query but we have a current contact with company
-    if not search_query and not company_to_search:
-        if current and current.company:
-            company_to_search = current.company
+    # Extract from entities if not found
+    if result.entities.get('name') and not person_name:
+        person_name = result.entities.get('name')
+        if search_type == "general":
+            search_type = "person"
+    if result.entities.get('company') and not company_name:
+        company_name = result.entities.get('company')
+        if search_type == "general":
+            search_type = "company"
 
-    # If still nothing to search, ask for clarification
-    if not search_query and not company_to_search:
+    # General search fallback
+    if search_type == "general":
+        general_patterns = [
+            r"search (?:for )?(.+)",
+            r"look up (.+)",
+            r"find (?:out )?(?:about )?(.+)",
+            r"what (?:can you find|do you know) about (.+)",
+        ]
+        for pattern in general_patterns:
+            match = re.search(pattern, msg_lower)
+            if match:
+                search_query = match.group(1).strip()
+                # Clean up common words
+                search_query = re.sub(r'^(what|exactly|info on|info about|about)\s+', '', search_query)
+                search_query = re.sub(r'\s+(does|is|are|do|and add it).*$', '', search_query)
+                break
+
+    # Use current contact's info if nothing extracted
+    if not person_name and not company_name and not search_query:
+        if current:
+            if current.company:
+                company_name = current.company
+                search_type = "company"
+            elif current.name:
+                person_name = current.name
+                search_type = "person"
+
+    # If still nothing, ask for clarification
+    if not person_name and not company_name and not search_query:
         if current:
             return (
                 f"What should I search for? 🔍\n\n"
-                f"I can look up info about:\n"
-                f"• A company (e.g., _'search for TechCorp'_)\n"
-                f"• A person (e.g., _'find info on {current.name}'_)"
+                f"I can look up:\n"
+                f"• _'{current.name}'s LinkedIn'_\n"
+                f"• _'Search for {current.company or 'their company'}'_\n"
+                f"• _'Research {current.name}'_"
             )
-        else:
-            return (
-                "What would you like me to search for? 🔍\n\n"
-                "Try:\n"
-                "• _'Search for TechCorp'_\n"
-                "• _'Look up info on Sprintly Partners'_"
-            )
+        return (
+            "What would you like me to search for? 🔍\n\n"
+            "Try:\n"
+            "• _'Find Ahmed Abaza's LinkedIn'_\n"
+            "• _'Search for Synapse Analytics'_\n"
+            "• _'Research info on John Smith'_"
+        )
 
-    # Perform the search - prefer explicit search query over inferred company
-    query_to_search = search_query or company_to_search
+    # Check if search is available
+    if not enrichment.is_available():
+        error = enrichment.get_last_error()
+        if error and "Invalid API key" in error:
+            return "⚠️ Search is currently unavailable - API key issue.\n\n_I can still help you manage contacts!_"
+        # Try to reinitialize
+        enrichment._tavily_client = None
+        enrichment._api_valid = None
 
     try:
-        # Check if search service is available
-        if not enrichment.is_available():
-            error = enrichment.get_last_error()
-            if error and "Invalid API key" in error:
-                return (
-                    f"⚠️ Search is currently unavailable.\n\n"
-                    f"The SerpAPI key needs to be updated. Please check your API key at:\n"
-                    f"https://serpapi.com/manage-api-key\n\n"
-                    f"_Once updated, I'll be able to search for **{query_to_search}** for you!_"
-                )
-            return (
-                f"⚠️ Search is currently unavailable.\n\n"
-                f"_I can still help you manage contacts though!_"
+        researcher = get_researcher_crew()
+
+        # Execute search based on type
+        if search_type == "linkedin":
+            response = f"🔍 Searching for **{person_name}**'s LinkedIn profile...\n\n"
+            search_result = researcher.search_linkedin(
+                name=person_name,
+                company=company_name or (current.company if current else None)
             )
 
-        response = f"🔍 Let me look up **{query_to_search}** for you...\n\n"
-        company_info = enrichment.search_company(query_to_search)
+        elif search_type == "person":
+            response = f"🔍 Researching **{person_name}**...\n\n"
+            search_result = researcher.research_person(
+                name=person_name,
+                company=company_name or (current.company if current else None)
+            )
 
-        # Check for errors after search
-        if not enrichment.is_available():
-            error = enrichment.get_last_error()
-            if error and "Invalid API key" in error:
-                return (
-                    f"⚠️ Search failed - the SerpAPI key is invalid.\n\n"
-                    f"Please update your API key at:\n"
-                    f"https://serpapi.com/manage-api-key"
-                )
+        elif search_type == "company":
+            response = f"🔍 Researching **{company_name}**...\n\n"
+            search_result = researcher.research_company(company_name)
 
-        if company_info:
-            # Format the results nicely
-            results = company_info.get('search_results', [])
-
-            # Store results for later summarization/use
-            if results:
-                store_search_results(user_id, query_to_search, results)
-
-            if results:
-                response += "Here's what I found:\n\n"
-                for i, r in enumerate(results[:3], 1):
-                    title = r.get('title', 'No title')
-                    snippet = r.get('snippet', '')
-                    response += f"**{i}.** {title}\n_{snippet}_\n\n"
-
-            # Company LinkedIn
-            if company_info.get('linkedin_url'):
-                response += f"🔗 LinkedIn: {company_info['linkedin_url']}\n\n"
-
-            # Recent news
-            news = company_info.get('recent_news', [])
-            if news:
-                response += "📰 **Recent News:**\n"
-                for n in news[:2]:
-                    response += f"• {n.get('title', '')}\n"
-                response += "\n"
-
-            # If we have a current contact, offer to add the info
-            if current:
-                response += (
-                    f"_Want me to add this to **{current.name}**'s profile?_\n"
-                    f"_Say 'add to description' or 'summarize' for a summary._"
-                )
         else:
-            response += "Hmm, couldn't find much. Try a different search term?"
+            query = search_query or person_name or company_name
+            response = f"🔍 Searching for **{query}**...\n\n"
+            search_result = researcher.search_general(query)
+
+        # Format the result
+        if search_result:
+            # Clean up CrewAI output formatting
+            clean_result = str(search_result)
+            # Remove agent verbose output patterns
+            clean_result = re.sub(r'\[DEBUG\].*?\n', '', clean_result)
+            clean_result = re.sub(r'Agent:.*?\n', '', clean_result)
+            clean_result = re.sub(r'Task:.*?\n', '', clean_result)
+            clean_result = re.sub(r'> Entering.*?\n', '', clean_result)
+            clean_result = re.sub(r'> Finished.*?\n', '', clean_result)
+
+            response += clean_result.strip()
+
+            # Extract LinkedIn URL if present
+            linkedin_match = re.search(r'https?://(?:www\.)?linkedin\.com/in/[a-zA-Z0-9_-]+/?', clean_result)
+            if linkedin_match and current:
+                linkedin_url = linkedin_match.group(0)
+                response += f"\n\n_Want me to add this LinkedIn ({linkedin_url}) to **{current.name}**?_"
+        else:
+            response += "Couldn't find much information. Try being more specific or check the spelling."
 
         return response
 
@@ -892,9 +941,29 @@ async def handle_search(user_id: str, result: ConversationResult, original_messa
         import logging
         logger = logging.getLogger('network_agent')
         logger.error(f"Search error: {e}")
+        import traceback
+        traceback.print_exc()
+
+        # Fallback to basic search
+        try:
+            query = person_name or company_name or search_query
+            results = enrichment._search(query, 5)
+            if results:
+                response = f"🔍 Results for **{query}**:\n\n"
+                for i, r in enumerate(results[:3], 1):
+                    response += f"**{i}.** {r.get('title', '')}\n"
+                    response += f"_{r.get('snippet', '')[:150]}_\n"
+                    response += f"Link: {r.get('link', '')}\n\n"
+                return response
+        except:
+            pass
+
         return (
-            "Oops! Had trouble searching. 😅\n\n"
-            "Make sure the search service is configured, or try again later."
+            "Oops! Had trouble with that search. 😅\n\n"
+            "Try:\n"
+            "• Being more specific with the name\n"
+            "• Adding a company name\n"
+            "• Checking the spelling"
         )
 
 
@@ -1010,30 +1079,8 @@ async def handle_enrich_request(user_id: str, name: str, company: Optional[str] 
         saved = save_result.get("updated_in_db", False)
         response = f"Running enrichment for **{full_name}**...\n\n"
 
-    # Summarize what was found
-    found_items = []
-    if result.get("contact_linkedin_url") and result.get("contact_linkedin_url") != "NA":
-        found_items.append("LinkedIn profile")
-    if result.get("company_linkedin_url") and result.get("company_linkedin_url") != "NA":
-        found_items.append("Company LinkedIn")
-    if result.get("linkedin_summary") and result.get("linkedin_summary") != "NA":
-        found_items.append("Bio")
-    if result.get("company") and result.get("company") != "NA":
-        found_items.append(f"Company ({result['company']})")
-    if result.get("title") and result.get("title") != "NA":
-        found_items.append(f"Title ({result['title']})")
-    if result.get("industry") and result.get("industry") != "NA":
-        found_items.append(f"Industry ({result['industry']})")
-    if result.get("contact_type") and result.get("contact_type") != "NA":
-        found_items.append(f"Type ({result['contact_type']})")
-
-    if found_items:
-        response += f"Found: {', '.join(found_items)}.\n\n"
-
-    # Show full JSON data
-    response += "```json\n"
-    response += json.dumps(result, indent=2, ensure_ascii=False)
-    response += "\n```"
+    # Use clean formatted list instead of JSON
+    response += format_enrichment_result(result)
 
     # Add status-specific outro
     if status == "Enriched":
@@ -1398,6 +1445,11 @@ async def process_message(user_id: str, message: str) -> str:
     """
     import logging
     logger = logging.getLogger('network_agent')
+
+    # Sanitize input for security (XSS, injection, length limits)
+    message = sanitize_input(message)
+    if not message:
+        return "I didn't catch that. Could you try again?"
 
     try:
         # Use the new agent-based architecture

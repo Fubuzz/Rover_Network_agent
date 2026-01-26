@@ -5,13 +5,19 @@ Bulk Import Service for importing contacts from CSV and Excel files.
 import csv
 import io
 import logging
+import asyncio
 from typing import List, Dict, Optional, Tuple, Any
 from datetime import datetime
 
 from data.schema import Contact, ImportResult, InputSource
-from services.google_sheets import get_sheets_service
+from services.airtable_service import get_sheets_service
 
 logger = logging.getLogger("network_agent.bulk_import")
+
+# Import settings
+MAX_ROWS = 100  # Maximum rows to import per file
+BATCH_SIZE = 50  # Number of contacts to process before pausing
+BATCH_DELAY = 2  # Seconds to wait between batches (to avoid API rate limits)
 
 
 # Header mapping - maps various column names to Contact fields
@@ -68,6 +74,8 @@ HEADER_MAPPINGS = {
     "linkedin profile": "linkedin_url",
     "linkedinurl": "linkedin_url",
     "contact_linkedin_url": "linkedin_url",
+    "url": "linkedin_url",  # LinkedIn export uses just "URL"
+    "profile url": "linkedin_url",
 
     # Company LinkedIn
     "company linkedin": "company_linkedin_url",
@@ -100,8 +108,11 @@ HEADER_MAPPINGS = {
     # Website
     "website": "website",
     "web": "website",
-    "url": "website",
     "site": "website",
+
+    # Connected date (LinkedIn export)
+    "connected on": "imported_date",
+    "connection date": "imported_date",
 
     # Company description
     "company description": "company_description",
@@ -143,10 +154,18 @@ class BulkImportService:
                 result.add_error("No data found in file")
                 return result
 
-            result.total_rows = len(rows)
-            logger.info(f"[BULK_IMPORT] Parsed {len(rows)} rows from {filename}")
+            # Apply row limit
+            total_in_file = len(rows)
+            if len(rows) > MAX_ROWS:
+                logger.info(f"[BULK_IMPORT] File has {len(rows)} rows, limiting to {MAX_ROWS}")
+                rows = rows[:MAX_ROWS]
+                result.add_error(f"Note: File had {total_in_file} rows, imported first {MAX_ROWS} only")
 
-            # Process each row
+            result.total_rows = len(rows)
+            logger.info(f"[BULK_IMPORT] Processing {len(rows)} rows from {filename} (file had {total_in_file})")
+
+            # Process each row with batching to avoid API rate limits
+            processed_in_batch = 0
             for i, row_data in enumerate(rows):
                 try:
                     contact = self._create_contact(row_data)
@@ -160,14 +179,25 @@ class BulkImportService:
                             result.successful += 1
                         elif status == "updated":
                             result.updated += 1
+                        processed_in_batch += 1
                     else:
                         result.failed += 1
                         result.add_error(f"Row {i+2}: Failed to save {contact.name or contact.email}")
+
+                    # Rate limiting: pause after each batch
+                    if processed_in_batch >= BATCH_SIZE:
+                        logger.info(f"[BULK_IMPORT] Processed batch of {BATCH_SIZE}, pausing for {BATCH_DELAY}s...")
+                        await asyncio.sleep(BATCH_DELAY)
+                        processed_in_batch = 0
 
                 except Exception as e:
                     result.failed += 1
                     result.add_error(f"Row {i+2}: {str(e)}")
                     logger.error(f"[BULK_IMPORT] Error processing row {i+2}: {e}")
+                    # If we hit rate limit, wait longer
+                    if "429" in str(e) or "quota" in str(e).lower():
+                        logger.warning("[BULK_IMPORT] Rate limit hit, waiting 60s...")
+                        await asyncio.sleep(60)
 
             logger.info(f"[BULK_IMPORT] Complete: {result.summary()}")
 
@@ -247,15 +277,20 @@ class BulkImportService:
         if not rows:
             return []
 
-        # First row is headers
-        raw_headers = [str(h).strip() if h else "" for h in rows[0]]
+        # Auto-detect header row (LinkedIn exports have intro text in first rows)
+        header_row_idx = self._find_header_row(rows)
+        if header_row_idx is None:
+            logger.warning("[BULK_IMPORT] Could not detect header row, using first row")
+            header_row_idx = 0
+
+        raw_headers = [str(h).strip() if h else "" for h in rows[header_row_idx]]
         header_map = self._detect_headers(raw_headers)
 
-        logger.info(f"[BULK_IMPORT] Excel headers detected: {header_map}")
+        logger.info(f"[BULK_IMPORT] Excel headers detected at row {header_row_idx + 1}: {header_map}")
 
-        # Parse remaining rows
+        # Parse remaining rows (after header row)
         contacts = []
-        for row in rows[1:]:
+        for row in rows[header_row_idx + 1:]:
             if not any(cell for cell in row if cell is not None):
                 continue  # Skip empty rows
 
@@ -274,6 +309,39 @@ class BulkImportService:
 
         workbook.close()
         return contacts
+
+    def _find_header_row(self, rows: List[tuple]) -> Optional[int]:
+        """
+        Find the row index containing headers by looking for known header patterns.
+
+        Args:
+            rows: List of row tuples from Excel
+
+        Returns:
+            Index of header row, or None if not found
+        """
+        # Common header indicators
+        header_indicators = {
+            "first name", "last name", "name", "full name", "email",
+            "email address", "company", "position", "title", "phone",
+            "linkedin", "url", "connected on"
+        }
+
+        for idx, row in enumerate(rows[:20]):  # Check first 20 rows
+            if row is None:
+                continue
+            # Count how many cells match header indicators
+            matches = 0
+            for cell in row:
+                if cell is not None:
+                    cell_lower = str(cell).lower().strip()
+                    if cell_lower in header_indicators:
+                        matches += 1
+            # If we found at least 2 header matches, this is likely the header row
+            if matches >= 2:
+                return idx
+
+        return None
 
     def _detect_headers(self, headers: List[str]) -> Dict[str, str]:
         """

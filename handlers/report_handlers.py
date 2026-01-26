@@ -7,7 +7,7 @@ from telegram.ext import ContextTypes, CommandHandler
 import io
 
 from crews.reporting_crew import get_reporting_crew
-from services.google_sheets import get_sheets_service
+from services.airtable_service import get_sheets_service
 from analytics.tracker import get_tracker
 from data.schema import OperationType
 from utils.formatters import format_statistics

@@ -16,7 +16,7 @@ from langchain_openai import ChatOpenAI
 
 from config import AIConfig
 from data.schema import Draft, ApprovalStatus, SendStatus
-from services.google_sheets import get_sheets_service
+from services.airtable_service import get_sheets_service
 
 
 class OutreachService:

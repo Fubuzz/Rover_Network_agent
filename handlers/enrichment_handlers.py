@@ -12,6 +12,75 @@ from analytics.tracker import get_tracker
 from data.schema import OperationType
 
 
+def format_enrichment_result(result: dict) -> str:
+    """Format enrichment result as a clean list instead of JSON."""
+    lines = []
+    name = result.get("full_name", "Contact")
+
+    # Header
+    lines.append(f"**{name}**")
+    lines.append("")
+
+    # Professional Info
+    if result.get("title") and result.get("title") != "NA":
+        company = result.get("company", "")
+        if company and company != "NA":
+            lines.append(f"• **Role:** {result['title']} at {company}")
+        else:
+            lines.append(f"• **Role:** {result['title']}")
+    elif result.get("company") and result.get("company") != "NA":
+        lines.append(f"• **Company:** {result['company']}")
+
+    # Contact Type & Industry
+    if result.get("contact_type") and result.get("contact_type") != "NA":
+        lines.append(f"• **Type:** {result['contact_type']}")
+    if result.get("industry") and result.get("industry") != "NA":
+        lines.append(f"• **Industry:** {result['industry']}")
+
+    # Location
+    if result.get("address") and result.get("address") != "NA":
+        lines.append(f"• **Location:** {result['address']}")
+
+    # Links
+    if result.get("contact_linkedin_url") and result.get("contact_linkedin_url") != "NA":
+        lines.append(f"• **LinkedIn:** {result['contact_linkedin_url']}")
+    if result.get("company_linkedin_url") and result.get("company_linkedin_url") != "NA":
+        lines.append(f"• **Company LinkedIn:** {result['company_linkedin_url']}")
+    if result.get("website") and result.get("website") != "NA":
+        lines.append(f"• **Website:** {result['website']}")
+
+    # Contact Info
+    if result.get("email") and result.get("email") != "NA":
+        lines.append(f"• **Email:** {result['email']}")
+    if result.get("phone") and result.get("phone") != "NA":
+        lines.append(f"• **Phone:** {result['phone']}")
+
+    # Summary
+    if result.get("linkedin_summary") and result.get("linkedin_summary") != "NA":
+        summary = result["linkedin_summary"]
+        # Truncate if too long
+        if len(summary) > 300:
+            summary = summary[:297] + "..."
+        lines.append("")
+        lines.append(f"**Summary:** {summary}")
+
+    # Company Description
+    if result.get("company_description") and result.get("company_description") != "NA":
+        desc = result["company_description"]
+        if len(desc) > 200:
+            desc = desc[:197] + "..."
+        lines.append("")
+        lines.append(f"**About Company:** {desc}")
+
+    # Research Quality
+    quality = result.get("research_quality", "Unknown")
+    status = result.get("status", "Unknown")
+    lines.append("")
+    lines.append(f"_Research Quality: {quality} | Status: {status}_")
+
+    return "\n".join(lines)
+
+
 async def enrich_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Handle /enrich command to enrich a contact with online search.
@@ -151,11 +220,9 @@ async def _handle_single_enrichment(update: Update, crew, tracker, input_text: s
     name = result.get("full_name", input_text)
     company = result.get("company")
 
-    # Build response
-    response = f"Running enrichment for {name}...\n\n"
-    response += "```json\n"
-    response += json.dumps(result, indent=2, ensure_ascii=False)
-    response += "\n```"
+    # Build response - use clean formatted list instead of JSON
+    response = f"**Enrichment Results**\n\n"
+    response += format_enrichment_result(result)
 
     # Auto-save enrichment data to Google Sheets
     saved = False

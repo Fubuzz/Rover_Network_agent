@@ -16,7 +16,7 @@ from config import (
 from app_logging.logger import configure_all_loggers, get_main_logger
 from app_logging.change_logger import get_change_logger
 from data.storage import get_analytics_db
-from services.google_sheets import get_sheets_service
+from services.airtable_service import get_sheets_service
 
 # Import handlers
 from handlers.contact_handlers import get_contact_handlers

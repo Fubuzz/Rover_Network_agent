@@ -6,7 +6,7 @@ from crewai import Agent
 from typing import List
 
 from tools.validation_tool import ValidationContactTool, DataQualityAssessmentTool
-from tools.google_sheets_tool import GoogleSheetsGetContactTool, GoogleSheetsStatsTool
+from tools.airtable_tool import AirtableGetContactTool, AirtableStatsTool
 
 
 def create_evaluation_agent() -> Agent:
@@ -15,8 +15,8 @@ def create_evaluation_agent() -> Agent:
     tools = [
         ValidationContactTool(),
         DataQualityAssessmentTool(),
-        GoogleSheetsGetContactTool(),
-        GoogleSheetsStatsTool()
+        AirtableGetContactTool(),
+        AirtableStatsTool()
     ]
     
     return Agent(
@@ -38,6 +38,6 @@ def get_evaluation_agent_tools() -> List:
     return [
         ValidationContactTool(),
         DataQualityAssessmentTool(),
-        GoogleSheetsGetContactTool(),
-        GoogleSheetsStatsTool()
+        AirtableGetContactTool(),
+        AirtableStatsTool()
     ]

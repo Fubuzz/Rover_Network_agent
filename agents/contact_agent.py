@@ -5,12 +5,12 @@ Contact Management Agent for handling contact CRUD operations.
 from crewai import Agent
 from typing import List
 
-from tools.google_sheets_tool import (
-    GoogleSheetsAddContactTool,
-    GoogleSheetsSearchTool,
-    GoogleSheetsGetContactTool,
-    GoogleSheetsUpdateContactTool,
-    GoogleSheetsStatsTool
+from tools.airtable_tool import (
+    AirtableAddContactTool,
+    AirtableSearchTool,
+    AirtableGetContactTool,
+    AirtableUpdateContactTool,
+    AirtableStatsTool
 )
 from tools.validation_tool import ValidationContactTool, DataQualityAssessmentTool
 
@@ -19,11 +19,11 @@ def create_contact_agent() -> Agent:
     """Create the Contact Management Agent."""
     
     tools = [
-        GoogleSheetsAddContactTool(),
-        GoogleSheetsSearchTool(),
-        GoogleSheetsGetContactTool(),
-        GoogleSheetsUpdateContactTool(),
-        GoogleSheetsStatsTool(),
+        AirtableAddContactTool(),
+        AirtableSearchTool(),
+        AirtableGetContactTool(),
+        AirtableUpdateContactTool(),
+        AirtableStatsTool(),
         ValidationContactTool(),
         DataQualityAssessmentTool()
     ]
@@ -45,11 +45,11 @@ You ensure every contact record is as complete as possible and properly formatte
 def get_contact_agent_tools() -> List:
     """Get the list of tools for the contact agent."""
     return [
-        GoogleSheetsAddContactTool(),
-        GoogleSheetsSearchTool(),
-        GoogleSheetsGetContactTool(),
-        GoogleSheetsUpdateContactTool(),
-        GoogleSheetsStatsTool(),
+        AirtableAddContactTool(),
+        AirtableSearchTool(),
+        AirtableGetContactTool(),
+        AirtableUpdateContactTool(),
+        AirtableStatsTool(),
         ValidationContactTool(),
         DataQualityAssessmentTool()
     ]

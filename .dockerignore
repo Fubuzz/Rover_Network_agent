@@ -1,0 +1,44 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+.venv
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.cursor/
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Logs and data (mount as volumes instead)
+*.log
+logs/
+data/
+
+# Documentation
+*.md
+!README.md
+
+# Tests
+tests/
+test_*.py
+*_test.py
+
+# Misc
+.DS_Store
+Thumbs.db
+*.bak

@@ -1,14 +1,22 @@
 """
 Agent Tools for the Rover Network Agent.
 These tools are called by the AI agent to perform actions.
+
+Architecture (Session-Based):
+- Each user has a UserSession with a ContactDraft "shopping cart"
+- Research tools UPDATE the draft directly (not just display text)
+- Save tool reads FROM the draft (doesn't guess from LLM)
+- This fixes: Amnesia, Nagging, Hallucination
 """
 
 import json
 import logging
+import re
 from typing import Optional, Dict, Any, List
 
 from services.contact_memory import get_memory_service, ConversationState
-from services.google_sheets import get_sheets_service
+from services.user_session import get_user_session, ContactDraft, DraftStatus
+from services.airtable_service import get_sheets_service
 from services.enrichment import get_enrichment_service
 from services.ai_service import get_ai_service
 from data.schema import Contact
@@ -26,24 +34,65 @@ _user_search_query: Dict[str, str] = {}  # Track what was searched
 _user_last_mentioned_person: Dict[str, str] = {}  # Track last PERSON mentioned (for "Add him/her")
 
 
+def extract_linkedin_url(text: str) -> Optional[str]:
+    """Extract LinkedIn URL from text."""
+    pattern = r'https?://(?:www\.)?linkedin\.com/in/[a-zA-Z0-9_-]+/?'
+    match = re.search(pattern, text)
+    return match.group(0) if match else None
+
+
+def extract_email(text: str) -> Optional[str]:
+    """Extract valid email from text."""
+    pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+    match = re.search(pattern, text)
+    if match:
+        email = match.group(0)
+        # Validate it's not garbage
+        if len(email) > 5 and '.' in email.split('@')[1]:
+            return email
+    return None
+
+
+def extract_phone(text: str) -> Optional[str]:
+    """Extract phone number from text."""
+    # Look for phone patterns
+    patterns = [
+        r'\+?[\d\s\-\(\)]{10,}',
+        r'\d{3}[\s\-\.]\d{3}[\s\-\.]\d{4}',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            phone = match.group(0).strip()
+            # Must have at least 7 digits
+            digits = re.sub(r'\D', '', phone)
+            if len(digits) >= 7:
+                return phone
+    return None
+
+
 def save_contact_to_storage(contact: Contact) -> tuple[bool, str, str]:
     """Save a contact to storage. Returns (success, storage_type, error_message)."""
     try:
         sheets = get_sheets_service()
         sheets._ensure_initialized()
         if sheets.add_contact(contact):
-            logger.info(f"[STORAGE] Contact '{contact.name}' saved to Google Sheets")
-            return True, "google_sheets", ""
+            logger.info(f"[STORAGE] Contact '{contact.name}' saved to Airtable")
+            return True, "airtable", ""
         else:
-            # add_contact returned False - likely duplicate email with same-name contact
             logger.warning(f"[STORAGE] add_contact returned False for '{contact.name}' - checking for duplicates")
             # Check if contact actually exists (might be a name collision)
             existing = sheets.get_contact_by_name(contact.name)
             if existing:
                 return False, "", f"Contact '{contact.name}' already exists. Use 'update' to modify it."
-            return False, "", f"Could not save '{contact.name}' - check for duplicate email."
+            # Check if email exists on another contact
+            if contact.email:
+                email_match = sheets.find_contact_by_email(contact.email)
+                if email_match:
+                    return False, "", f"Email {contact.email} is already used by '{email_match.name}'."
+            return False, "", f"Could not save '{contact.name}'. Please try again."
     except Exception as e:
-        logger.error(f"Google Sheets error: {e}")
+        logger.error(f"Airtable error: {e}")
 
     # Fallback to local storage
     try:
@@ -172,11 +221,17 @@ class AgentTools:
     """
     Tool implementations for the Rover Agent.
     Each method is a tool that can be called by the agent.
+
+    Uses Session-Based Architecture:
+    - ContactDraft acts as a "shopping cart" for contact data
+    - Research tools update the draft directly
+    - Save reads from draft, NOT from LLM arguments
     """
 
     def __init__(self, user_id: str):
         self.user_id = user_id
         self.memory = get_memory_service()
+        self.session = get_user_session(user_id)
 
     async def add_contact(self, name: str, title: str = None, company: str = None,
                          email: str = None, phone: str = None, linkedin: str = None,
@@ -185,17 +240,42 @@ class AgentTools:
         """Add a new contact and start editing it."""
         logger.info(f"[TOOL] add_contact called: name={name}")
 
-        # Check if already editing someone
-        pending = self.memory.get_pending_contact(self.user_id)
-        if pending:
-            return f"Already editing {pending.name}. Say 'done' to save first, or 'cancel' to discard."
+        # Check if already editing someone in session
+        if self.session.has_draft():
+            existing_name = self.session.draft.name
+            return f"Already editing {existing_name}. Say 'save' to save first, or 'cancel' to discard."
 
-        # Create the contact
+        # Create new draft in session
+        draft = self.session.start_new_contact(name)
+
+        # Apply any provided fields
+        if title:
+            draft.update_field('title', title)
+        if company:
+            draft.update_field('company', company)
+        if email:
+            draft.update_field('email', email)
+        if phone:
+            draft.update_field('phone', phone)
+        if linkedin:
+            draft.update_field('linkedin_url', linkedin)
+        if contact_type:
+            draft.update_field('contact_type', contact_type)
+        if location:
+            draft.update_field('location', location)
+        if notes:
+            draft.append_notes(notes)
+
+        # Split name
         name_parts = name.split()
+        draft.first_name = name_parts[0] if name_parts else ''
+        draft.last_name = ' '.join(name_parts[1:]) if len(name_parts) > 1 else ''
+
+        # Also update old memory system for compatibility
         contact = Contact(
             full_name=name,
-            first_name=name_parts[0] if name_parts else '',
-            last_name=' '.join(name_parts[1:]) if len(name_parts) > 1 else '',
+            first_name=draft.first_name,
+            last_name=draft.last_name,
             title=title,
             company=company,
             email=email,
@@ -207,8 +287,6 @@ class AgentTools:
             notes=notes,
             user_id=self.user_id
         )
-
-        # Start collecting mode
         self.memory.start_collecting(self.user_id, contact)
 
         # Track context
@@ -232,9 +310,14 @@ class AgentTools:
                             contact_type: str = None, company_description: str = None,
                             location: str = None, notes: str = None) -> str:
         """Update fields on the current contact being edited."""
+        # Check session draft first
+        draft = self.session.draft if self.session.has_draft() else None
         pending = self.memory.get_pending_contact(self.user_id)
-        if not pending:
+
+        if not draft and not pending:
             return "No contact being edited. Start with 'Add [name]' first."
+
+        target_name = draft.name if draft else pending.name
 
         # Build updates dict
         updates = {}
@@ -254,26 +337,72 @@ class AgentTools:
             updates['company_description'] = company_description
         if location:
             updates['address'] = location
+            updates['location'] = location  # For draft
         if notes:
             updates['notes'] = notes
 
         if not updates:
-            return f"No updates provided for {pending.name}."
+            return f"No updates provided for {target_name}."
 
-        # Apply updates
-        self.memory.update_pending(self.user_id, updates)
+        # Update session draft
+        if draft:
+            for field, value in updates.items():
+                if field == 'notes':
+                    draft.append_notes(value)
+                elif field == 'linkedin_url':
+                    draft.update_field('linkedin_url', value)
+                elif field == 'address':
+                    draft.update_field('location', value)
+                elif hasattr(draft, field):
+                    draft.update_field(field, value)
+
+        # Also update old memory system
+        if pending:
+            self.memory.update_pending(self.user_id, updates)
 
         # Format response
         update_parts = [f"{k}='{v}'" for k, v in updates.items()]
-        logger.info(f"[TOOL] update_contact: {pending.name} -> {update_parts}")
+        logger.info(f"[TOOL] update_contact: {target_name} -> {update_parts}")
 
-        return f"Updated {pending.name}: {', '.join(update_parts)}"
+        return f"Updated {target_name}: {', '.join(update_parts)}"
 
     async def save_contact(self) -> str:
-        """Save the current contact to the database."""
-        pending = self.memory.get_pending_contact(self.user_id)
-        if not pending:
-            return "No contact to save."
+        """
+        Save the current contact to the database.
+
+        CRITICAL: This reads from the SESSION DRAFT, not from LLM arguments.
+        This prevents the "hallucination" bug where garbage data gets saved.
+        """
+        # First, check the session draft (new architecture)
+        if not self.session.has_draft():
+            # Fallback to old memory system for compatibility
+            pending = self.memory.get_pending_contact(self.user_id)
+            if not pending:
+                return "No contact to save. Add a contact first."
+        else:
+            # Use session draft as the source of truth
+            draft = self.session.draft
+            logger.info(f"[TOOL] save_contact: Saving from session draft: {draft.name}")
+
+            # Convert draft to Contact object
+            pending = Contact(
+                full_name=draft.name,
+                first_name=draft.first_name or (draft.name.split()[0] if draft.name else ''),
+                last_name=draft.last_name or (' '.join(draft.name.split()[1:]) if draft.name and ' ' in draft.name else ''),
+                title=draft.title,
+                company=draft.company,
+                email=draft.email,  # Already validated in draft
+                phone=draft.phone,
+                linkedin_url=draft.linkedin_url,
+                contact_type=draft.contact_type,
+                industry=draft.industry,
+                address=draft.location,
+                notes=draft.notes + ("\n\n" + draft.research_summary if draft.research_summary else ""),
+                user_id=self.user_id
+            )
+
+            # Also sync to old memory system
+            self.memory.start_collecting(self.user_id, pending)
 
         # Check if contact already exists
         existing = find_contact_in_storage(pending.name)
@@ -302,16 +431,16 @@ class AgentTools:
             saved_contact = pending
             saved_name = saved_contact.name
 
-            # CRITICAL: Hard reset clears ALL context and LOCKS the saved contact
-            # This prevents the "zombie context" bug where old contact data leaks to new contacts
-            self.memory.hard_reset(self.user_id, saved_name)
+            # CRITICAL: Clear BOTH session and old memory
+            self.session.mark_saved()  # Clear session draft
+            self.memory.hard_reset(self.user_id, saved_name)  # Clear old memory
 
-            # Track last contact for reference (but it's now LOCKED)
+            # Track last contact for reference
             _user_last_contact[self.user_id] = saved_name
-            _user_last_action[self.user_id] = f"saved and LOCKED contact '{saved_name}'"
+            _user_last_action[self.user_id] = f"saved contact '{saved_name}'"
 
-            logger.info(f"[TOOL] save_contact: Saved and LOCKED {saved_name}. Context cleared.")
-            return f"Saved {saved_name} to your network! ✅ Session cleared.\n\n{format_contact_card(saved_contact)}"
+            logger.info(f"[TOOL] save_contact: Saved {saved_name}. Session cleared.")
+            return f"Saved {saved_name} to your network! ✅\n\n{format_contact_card(saved_contact)}"
 
         # Return actual error message if available
         if error_msg:
@@ -481,12 +610,17 @@ Provide a brief, informative summary suitable for a contact profile."""
 
     async def cancel_current(self) -> str:
         """Cancel the current contact without saving."""
+        # Check both session and old memory
+        draft = self.session.draft if self.session.has_draft() else None
         pending = self.memory.get_pending_contact(self.user_id)
 
-        if not pending:
+        if not draft and not pending:
             return "Nothing to cancel."
 
-        name = pending.name
+        name = draft.name if draft else pending.name
+
+        # Clear both session and old memory
+        self.session.clear()
         self.memory.cancel_pending(self.user_id)
 
         logger.info(f"[TOOL] cancel_current: Cancelled {name}")
@@ -547,124 +681,430 @@ Provide a brief, informative summary suitable for a contact profile."""
 
     async def enrich_contact(self, name: str = None) -> str:
         """
-        Enrich a contact with web research data.
-        Returns a SYSTEM_NOTE that FORCES the agent to update the contact.
+        Enrich a contact with DEEP research data using the new research engine.
+
+        This performs comprehensive multi-source research:
+        1. LinkedIn profile search
+        2. Company intelligence
+        3. Person background research
+        4. Cross-validation of data
+
+        CRITICAL: Stores research data in the SESSION DRAFT for persistence.
         """
+        # Import the new research engine
+        from services.research_engine import get_research_engine
+        from data.research_schema import ResearchRequest, ConfidenceLevel
+        
         # Determine which contact to enrich
+        draft = self.session.draft if self.session.has_draft() else None
         pending = self.memory.get_pending_contact(self.user_id)
 
         if name:
             target_name = name
             target_company = None
-            # Check if we're enriching the pending contact or an existing one
-            if pending and name.lower() in pending.name.lower():
+            known_title = None
+            known_location = None
+            if draft and name.lower() in draft.name.lower():
+                target_company = draft.company
+                known_title = draft.title
+                known_location = draft.location
+            elif pending and name.lower() in pending.name.lower():
                 target_company = pending.company
+                known_title = pending.title
+                known_location = pending.address
+        elif draft:
+            target_name = draft.name
+            target_company = draft.company
+            known_title = draft.title
+            known_location = draft.location
         elif pending:
             target_name = pending.name
             target_company = pending.company
+            known_title = pending.title
+            known_location = pending.address
         else:
-            # Check last mentioned contact
             last = _user_last_contact.get(self.user_id)
             if last:
                 target_name = last
                 target_company = None
+                known_title = None
+                known_location = None
             else:
                 return "Who should I enrich? Add a contact first or specify a name."
 
-        logger.info(f"[TOOL] enrich_contact: Enriching '{target_name}' (company: {target_company})")
+        logger.info(f"[TOOL] enrich_contact: Deep research for '{target_name}' (company: {target_company})")
 
-        # Get enrichment data
-        enrichment = get_enrichment_service()
-        result = enrichment.enrich_contact_comprehensive(target_name, target_company)
-
-        status = result.get("status", "Failed")
-        if status == "Failed":
-            return f"Could not find enrichment data for {target_name}. {result.get('notes', '')}"
-
-        # Build the SYSTEM_NOTE format to force the agent to apply the data
-        # This is the critical fix - we're telling the agent this is DATA TO APPLY, not just text to show
-
-        # Prepare the fields that were found
-        found_fields = {}
-        field_mappings = {
-            "contact_linkedin_url": "linkedin",
-            "company_linkedin_url": "company_linkedin",
-            "title": "title",
-            "company": "company",
-            "industry": "industry",
-            "company_description": "company_description",
-            "contact_type": "contact_type",
-            "linkedin_summary": "linkedin_summary",
-            "website": "website",
-            "address": "location",
-            "funding_raised": "funding_raised",
-            "key_strengths": "key_strengths",
-            "research_quality": "research_quality",
-        }
-
-        for enrich_key, tool_key in field_mappings.items():
-            value = result.get(enrich_key)
-            if value and value != "NA":
-                found_fields[tool_key] = value
-
+        # Use the new deep research engine
+        engine = get_research_engine()
+        
+        request = ResearchRequest(
+            name=target_name,
+            company=target_company,
+            known_title=known_title,
+            known_location=known_location,
+            depth="standard"
+        )
+        
+        result = engine.research(request)
+        
         # Track context
         _user_last_action[self.user_id] = f"enriched '{target_name}'"
         _user_last_contact[self.user_id] = target_name
 
-        # If we have a pending contact, AUTO-APPLY the enrichment data
+        # Get structured field mappings
+        field_mappings = result.get_contact_field_mapping()
+        
+        # CRITICAL: Store research data in SESSION DRAFT
+        if draft and target_name.lower() in draft.name.lower():
+            fields_updated = []
+            
+            # Apply field mappings to draft
+            for field, value in field_mappings.items():
+                if not value:
+                    continue
+                    
+                # Map to draft field names
+                draft_field = field
+                if field == 'address':
+                    draft_field = 'location'
+                    
+                # Only update if field is empty in draft
+                current_val = getattr(draft, draft_field, None) if hasattr(draft, draft_field) else None
+                if not current_val:
+                    if draft_field in ['linkedin_url', 'title', 'company', 'email', 'phone', 
+                                       'location', 'industry', 'contact_type']:
+                        draft.update_field(draft_field, value)
+                        fields_updated.append(draft_field)
+            
+            # Store research summary
+            if result.person and result.person.professional_summary:
+                draft.set_research_summary(result.person.professional_summary)
+            
+            # Add research notes
+            notes = []
+            if result.linkedin_profile and result.linkedin_profile.profile_url:
+                notes.append(f"LinkedIn verified: {result.linkedin_profile.profile_url}")
+            if result.company and result.company.industry:
+                notes.append(f"Industry: {result.company.industry}")
+            if result.company and result.company.funding_stage:
+                notes.append(f"Company stage: {result.company.funding_stage}")
+            if result.research_notes:
+                notes.extend(result.research_notes)
+            
+            if notes:
+                draft.append_notes("Deep Research Findings:\n" + "\n".join(notes))
+            
+            logger.info(f"[TOOL] enrich_contact: Stored {len(fields_updated)} fields in session draft: {fields_updated}")
+
+        # Also update old memory system for compatibility
         if pending and target_name.lower() in pending.name.lower():
-            # Apply updates to pending contact
             updates = {}
-            if found_fields.get("linkedin"):
-                updates["linkedin_url"] = found_fields["linkedin"]
-            if found_fields.get("company_linkedin"):
-                updates["linkedin_link"] = found_fields["company_linkedin"]
-            if found_fields.get("title") and not pending.title:
-                updates["title"] = found_fields["title"]
-            if found_fields.get("company") and not pending.company:
-                updates["company"] = found_fields["company"]
-            if found_fields.get("industry"):
-                updates["industry"] = found_fields["industry"]
-            if found_fields.get("company_description"):
-                updates["company_description"] = found_fields["company_description"]
-            if found_fields.get("contact_type") and not pending.contact_type:
-                updates["contact_type"] = found_fields["contact_type"]
-            if found_fields.get("linkedin_summary"):
-                updates["linkedin_summary"] = found_fields["linkedin_summary"]
-            if found_fields.get("website"):
-                updates["website"] = found_fields["website"]
-            if found_fields.get("location") and not pending.address:
-                updates["address"] = found_fields["location"]
-            if found_fields.get("research_quality"):
-                updates["research_quality"] = found_fields["research_quality"]
+            if field_mappings.get("linkedin_url"):
+                updates["linkedin_url"] = field_mappings["linkedin_url"]
+            if field_mappings.get("title") and not pending.title:
+                updates["title"] = field_mappings["title"]
+            if field_mappings.get("company") and not pending.company:
+                updates["company"] = field_mappings["company"]
+            if field_mappings.get("industry"):
+                updates["industry"] = field_mappings["industry"]
+            if field_mappings.get("contact_type") and not pending.contact_type:
+                updates["contact_type"] = field_mappings["contact_type"]
+            if field_mappings.get("address") and not pending.address:
+                updates["address"] = field_mappings["address"]
 
             if updates:
                 self.memory.update_pending(self.user_id, updates)
-                logger.info(f"[TOOL] enrich_contact: AUTO-APPLIED {len(updates)} fields to pending contact")
 
-            # Build response
-            applied_list = list(updates.keys())
-            response = f"""ENRICHMENT COMPLETE for {target_name}.
+        # Build comprehensive response
+        response = f"**🔍 Deep Research Complete for {target_name}**\n\n"
+        
+        # Quality indicators
+        response += f"**Research Quality:** {result.overall_confidence.value.upper()}\n"
+        response += f"**Completeness:** {result.completeness_score:.0%}\n"
+        response += f"**Sources Consulted:** {result.sources_consulted}\n\n"
+        
+        # Person findings
+        if result.person:
+            response += "**👤 Person Information:**\n"
+            if result.person.current_title:
+                response += f"- Title: {result.person.current_title}\n"
+            if result.person.current_company:
+                response += f"- Company: {result.person.current_company}\n"
+            if result.person.location:
+                response += f"- Location: {result.person.location}\n"
+            if result.person.contact_type:
+                response += f"- Type: {result.person.contact_type}\n"
+            if result.person.seniority:
+                response += f"- Seniority: {result.person.seniority}\n"
+        
+        # LinkedIn
+        if result.linkedin_profile and result.linkedin_profile.profile_url:
+            response += f"\n**🔗 LinkedIn:** {result.linkedin_profile.profile_url}\n"
+        elif result.person and result.person.linkedin_url:
+            response += f"\n**🔗 LinkedIn:** {result.person.linkedin_url}\n"
+        
+        # Company findings
+        if result.company:
+            response += f"\n**🏢 Company: {result.company.name}**\n"
+            if result.company.industry:
+                response += f"- Industry: {result.company.industry}\n"
+            if result.company.funding_stage:
+                response += f"- Stage: {result.company.funding_stage}\n"
+            if result.company.total_funding:
+                response += f"- Funding: {result.company.total_funding}\n"
+            if result.company.website:
+                response += f"- Website: {result.company.website}\n"
+        
+        # Summary
+        if result.person and result.person.professional_summary:
+            summary = result.person.professional_summary[:250] + "..." if len(result.person.professional_summary) > 250 else result.person.professional_summary
+            response += f"\n**📝 Summary:**\n_{summary}_\n"
+        
+        # Warnings
+        if result.warnings:
+            response += f"\n**⚠️ Notes:**\n"
+            for w in result.warnings:
+                response += f"- {w}\n"
+        
+        # Accuracy indicators
+        if result.accuracy_indicators:
+            response += f"\n**✅ Verified:**\n"
+            for a in result.accuracy_indicators:
+                response += f"- {a}\n"
+        
+        # Show current draft state
+        if draft:
+            response += f"\n\n**Current draft for {draft.name}:**\n{draft.get_display_card()}"
 
-**I found and AUTO-APPLIED these fields to the profile:**
-"""
-            for field in applied_list:
-                response += f"• {field}: {updates[field][:50]}{'...' if len(str(updates[field])) > 50 else ''}\n"
+        return response
 
-            response += f"\n**Research Quality:** {result.get('research_quality', 'Medium')}"
-            response += "\n\n_Say 'save' when ready to save this contact._"
+    async def deep_research(self, query: str) -> str:
+        """
+        Perform deep, comprehensive research using multi-source research engine.
+
+        This tool:
+        1. Runs comprehensive multi-source research
+        2. Cross-validates data from different sources
+        3. Uses AI to synthesize findings
+        4. Stores structured data in session draft
+        5. Returns detailed findings
+
+        This is the most thorough research option available.
+        """
+        logger.info(f"[TOOL] deep_research: query='{query}'")
+
+        # Import the new research engine
+        from services.research_engine import get_research_engine
+        from services.ai_research_synthesizer import get_synthesizer
+        from data.research_schema import ResearchRequest
+        
+        draft = self.session.draft if self.session.has_draft() else None
+        
+        # Parse query to extract name and company
+        # Query might be "John Smith" or "John Smith at Google" or "John Smith, CEO of Acme"
+        name = query
+        company = None
+        
+        # Try to extract company from query
+        company_patterns = [
+            r"(.+?)\s+at\s+(.+)$",
+            r"(.+?)\s+from\s+(.+)$",
+            r"(.+?),\s*(?:CEO|CTO|Founder|Director|VP|Manager)\s+(?:of|at)\s+(.+)$",
+        ]
+        
+        import re
+        for pattern in company_patterns:
+            match = re.search(pattern, query, re.IGNORECASE)
+            if match:
+                name = match.group(1).strip()
+                company = match.group(2).strip()
+                break
+        
+        # If we have a draft, use its company as context
+        if not company and draft:
+            company = draft.company
+        
+        try:
+            # Use the deep research engine
+            engine = get_research_engine()
+            
+            request = ResearchRequest(
+                name=name,
+                company=company,
+                depth="deep"  # Request deep research
+            )
+            
+            result = engine.research(request)
+            
+            # Track context
+            _user_search_query[self.user_id] = query
+            _user_last_action[self.user_id] = f"deep researched '{name}'"
+            
+            # Store in raw results for later reference
+            _user_search_results[self.user_id] = result.raw_search_results
+            
+            # Get field mappings
+            field_mappings = result.get_contact_field_mapping()
+            
+            # CRITICAL: Store extracted data in session draft
+            if draft:
+                fields_updated = []
+                
+                for field, value in field_mappings.items():
+                    if not value:
+                        continue
+                    
+                    draft_field = field
+                    if field == 'address':
+                        draft_field = 'location'
+                    
+                    # Update draft field
+                    if hasattr(draft, draft_field) or draft_field in ['linkedin_url', 'title', 'company', 
+                                                                        'email', 'phone', 'location', 
+                                                                        'industry', 'contact_type']:
+                        current = getattr(draft, draft_field, None) if hasattr(draft, draft_field) else None
+                        if not current:
+                            draft.update_field(draft_field, value)
+                            fields_updated.append(draft_field)
+                
+                # Store research summary
+                if result.person and result.person.professional_summary:
+                    draft.set_research_summary(result.person.professional_summary)
+                
+                # Add comprehensive research notes
+                notes = [f"\n=== Deep Research on {name} ==="]
+                
+                if result.linkedin_profile and result.linkedin_profile.profile_url:
+                    notes.append(f"LinkedIn: {result.linkedin_profile.profile_url}")
+                
+                if result.person:
+                    if result.person.current_title:
+                        notes.append(f"Title: {result.person.current_title}")
+                    if result.person.contact_type:
+                        notes.append(f"Type: {result.person.contact_type}")
+                    if result.person.expertise_areas:
+                        notes.append(f"Expertise: {', '.join(result.person.expertise_areas[:3])}")
+                
+                if result.company:
+                    notes.append(f"\nCompany: {result.company.name}")
+                    if result.company.industry:
+                        notes.append(f"Industry: {result.company.industry}")
+                    if result.company.funding_stage:
+                        notes.append(f"Stage: {result.company.funding_stage}")
+                
+                if result.accuracy_indicators:
+                    notes.append(f"\nVerified: {', '.join(result.accuracy_indicators)}")
+                
+                draft.append_notes("\n".join(notes))
+                
+                logger.info(f"[TOOL] deep_research: Stored {len(fields_updated)} fields in draft: {fields_updated}")
+
+            # Build comprehensive response
+            response = f"**🔬 Deep Research Complete: {name}**\n\n"
+            
+            # Research metadata
+            response += f"**Quality:** {result.overall_confidence.value.upper()} "
+            response += f"| **Completeness:** {result.completeness_score:.0%} "
+            response += f"| **Duration:** {result.research_duration_seconds:.1f}s\n\n"
+            
+            # Person findings
+            if result.person:
+                response += "**👤 Person:**\n"
+                if result.person.full_name:
+                    response += f"- **Name:** {result.person.full_name}\n"
+                if result.person.current_title:
+                    response += f"- **Title:** {result.person.current_title}\n"
+                if result.person.current_company:
+                    response += f"- **Company:** {result.person.current_company}\n"
+                if result.person.location:
+                    response += f"- **Location:** {result.person.location}\n"
+                if result.person.contact_type:
+                    response += f"- **Type:** {result.person.contact_type}\n"
+                if result.person.seniority:
+                    response += f"- **Seniority:** {result.person.seniority}\n"
+                if result.person.expertise_areas:
+                    response += f"- **Expertise:** {', '.join(result.person.expertise_areas[:4])}\n"
+                if result.person.email:
+                    response += f"- **Email:** {result.person.email}\n"
+                response += "\n"
+            
+            # LinkedIn
+            if result.linkedin_profile and result.linkedin_profile.profile_url:
+                response += f"**🔗 LinkedIn:** {result.linkedin_profile.profile_url}\n"
+                if result.linkedin_profile.headline:
+                    response += f"   _{result.linkedin_profile.headline}_\n"
+                response += "\n"
+            
+            # Company
+            if result.company:
+                response += f"**🏢 Company: {result.company.name}**\n"
+                if result.company.website:
+                    response += f"- Website: {result.company.website}\n"
+                if result.company.industry:
+                    response += f"- Industry: {result.company.industry}\n"
+                if result.company.company_size:
+                    response += f"- Size: {result.company.company_size}\n"
+                if result.company.funding_stage:
+                    response += f"- Stage: {result.company.funding_stage}\n"
+                if result.company.total_funding:
+                    response += f"- Funding: {result.company.total_funding}\n"
+                if result.company.headquarters:
+                    response += f"- HQ: {result.company.headquarters}\n"
+                if result.company.linkedin_url:
+                    response += f"- LinkedIn: {result.company.linkedin_url}\n"
+                if result.company.description:
+                    desc = result.company.description[:200] + "..." if len(result.company.description) > 200 else result.company.description
+                    response += f"\n_{desc}_\n"
+                response += "\n"
+            
+            # Summary
+            if result.person and result.person.professional_summary:
+                summary = result.person.professional_summary[:300] + "..." if len(result.person.professional_summary) > 300 else result.person.professional_summary
+                response += f"**📝 Background:**\n_{summary}_\n\n"
+            
+            # Data quality indicators
+            if result.accuracy_indicators:
+                response += "**✅ Verified:**\n"
+                for indicator in result.accuracy_indicators:
+                    response += f"- {indicator}\n"
+                response += "\n"
+            
+            # Warnings
+            if result.warnings:
+                response += "**⚠️ Warnings:**\n"
+                for w in result.warnings:
+                    response += f"- {w}\n"
+                response += "\n"
+            
+            # Field mappings for transparency
+            if field_mappings:
+                response += "**📋 Fields Found:**\n"
+                for field, value in field_mappings.items():
+                    if value:
+                        response += f"- {field}: {str(value)[:50]}{'...' if len(str(value)) > 50 else ''}\n"
+                response += "\n"
+            
+            # Draft status
+            if draft:
+                response += f"_All data has been stored in draft for **{draft.name}**. Say 'save' when ready._"
+            else:
+                response += f"_Tip: Use 'add {name}' to create a contact and save this research._"
 
             return response
 
-        else:
-            # No pending contact - return the data for the agent to use with update_existing_contact
-            import json
-            return f"""SYSTEM_NOTE: ENRICHMENT DATA FOUND. YOU MUST UPDATE THE CONTACT '{target_name}' WITH THIS DATA:
+        except Exception as e:
+            logger.error(f"Deep research error: {e}")
+            import traceback
+            traceback.print_exc()
+            return f"Error during deep research: {str(e)}"
 
-{json.dumps(found_fields, indent=2)}
+    async def get_draft_status(self) -> str:
+        """Get the current status of the contact draft."""
+        if not self.session.has_draft():
+            return "No contact draft in progress."
 
-ACTION REQUIRED: Call update_existing_contact with name="{target_name}" and the fields above.
-DO NOT just display this data - you must APPLY it to the contact."""
+        draft = self.session.draft
+        return f"**Draft Status for {draft.name}:**\n\n{draft.get_display_card()}"
 
     # Utility method to execute a tool by name
     async def execute(self, tool_name: str, arguments: Dict[str, Any]) -> str:
@@ -681,6 +1121,8 @@ DO NOT just display this data - you must APPLY it to the contact."""
             'list_contacts': self.list_contacts,
             'get_search_links': self.get_search_links,
             'enrich_contact': self.enrich_contact,
+            'deep_research': self.deep_research,
+            'get_draft_status': self.get_draft_status,
         }
 
         if tool_name not in tool_map:

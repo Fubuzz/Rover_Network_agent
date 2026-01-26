@@ -5,7 +5,7 @@ Troubleshooting Agent for error handling and problem resolution.
 from crewai import Agent
 from typing import List
 
-from tools.google_sheets_tool import GoogleSheetsGetContactTool, GoogleSheetsSearchTool
+from tools.airtable_tool import AirtableGetContactTool, AirtableSearchTool
 from tools.validation_tool import ValidationContactTool, DataQualityAssessmentTool
 from tools.ai_tool import AIGenerateResponseTool
 
@@ -14,8 +14,8 @@ def create_troubleshooting_agent() -> Agent:
     """Create the Troubleshooting Agent."""
     
     tools = [
-        GoogleSheetsGetContactTool(),
-        GoogleSheetsSearchTool(),
+        AirtableGetContactTool(),
+        AirtableSearchTool(),
         ValidationContactTool(),
         DataQualityAssessmentTool(),
         AIGenerateResponseTool()
@@ -38,8 +38,8 @@ You log issues for analysis and work to continuously improve system reliability.
 def get_troubleshooting_agent_tools() -> List:
     """Get the list of tools for the troubleshooting agent."""
     return [
-        GoogleSheetsGetContactTool(),
-        GoogleSheetsSearchTool(),
+        AirtableGetContactTool(),
+        AirtableSearchTool(),
         ValidationContactTool(),
         DataQualityAssessmentTool(),
         AIGenerateResponseTool()

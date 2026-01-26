@@ -14,7 +14,7 @@ from langchain_openai import ChatOpenAI
 
 from config import AIConfig
 from data.schema import Match, StageAlignment, IntroAngle, ToneInstruction, EmailStatus
-from services.google_sheets import get_sheets_service
+from services.airtable_service import get_sheets_service
 
 
 class MatchmakerService:
@@ -39,44 +39,56 @@ class MatchmakerService:
         investor: Dict[str, Any],
         analysis: Dict[str, Any]
     ) -> int:
-        """Calculate match score (0-100) based on analysis factors."""
+        """Calculate match score (0-100) based on analysis factors.
+
+        Scoring is MORE LENIENT to catch good matches.
+        Keywords checked in order of strength.
+        """
         score = 0
 
-        # Sector Fit (0-30 points)
-        sector_fit = analysis.get("sector_fit", "")
-        if "strong" in sector_fit.lower() or "exact" in sector_fit.lower():
+        # Sector Fit (0-30 points) - More lenient keywords
+        sector_fit = analysis.get("sector_fit", "").lower()
+        if any(kw in sector_fit for kw in ["strong", "exact", "direct", "perfect", "excellent", "high"]):
             score += 30
-        elif "partial" in sector_fit.lower() or "adjacent" in sector_fit.lower():
+        elif any(kw in sector_fit for kw in ["partial", "adjacent", "related", "good", "moderate", "overlap"]):
             score += 20
-        elif "possible" in sector_fit.lower():
+        elif any(kw in sector_fit for kw in ["possible", "potential", "some", "limited", "tangential"]):
             score += 10
+        elif sector_fit and "weak" not in sector_fit and "none" not in sector_fit:
+            score += 15  # Default non-negative response
 
         # Stage Alignment (0-25 points)
-        stage_alignment = analysis.get("stage_alignment", "")
-        if "exact" in stage_alignment.lower() or "perfect" in stage_alignment.lower():
+        stage_alignment = analysis.get("stage_alignment", "").lower()
+        if any(kw in stage_alignment for kw in ["exact", "perfect", "ideal", "match", "fits"]):
             score += 25
-        elif "typical" in stage_alignment.lower() or "within range" in stage_alignment.lower():
+        elif any(kw in stage_alignment for kw in ["typical", "within range", "close", "good", "appropriate"]):
             score += 20
-        elif "adjacent" in stage_alignment.lower() or "sometimes" in stage_alignment.lower():
+        elif any(kw in stage_alignment for kw in ["adjacent", "sometimes", "possible", "flexible"]):
             score += 10
+        elif stage_alignment and "outside" not in stage_alignment and "mismatch" not in stage_alignment:
+            score += 12  # Default non-negative response
 
         # Geo Alignment (0-20 points)
-        geo_alignment = analysis.get("geo_alignment", "")
-        if "local" in geo_alignment.lower() or "same" in geo_alignment.lower():
+        geo_alignment = analysis.get("geo_alignment", "").lower()
+        if any(kw in geo_alignment for kw in ["local", "same", "both", "shared"]):
             score += 20
-        elif "regional" in geo_alignment.lower() or "nearby" in geo_alignment.lower():
+        elif any(kw in geo_alignment for kw in ["regional", "nearby", "close", "mena", "middle east"]):
             score += 15
-        elif "remote" in geo_alignment.lower() or "global" in geo_alignment.lower():
+        elif any(kw in geo_alignment for kw in ["remote", "global", "international", "flexible"]):
             score += 10
+        elif geo_alignment and "no " not in geo_alignment:
+            score += 8  # Default
 
         # Thesis Alignment (0-25 points)
-        thesis_alignment = analysis.get("thesis_alignment", "")
-        if "strong" in thesis_alignment.lower() or "direct" in thesis_alignment.lower():
+        thesis_alignment = analysis.get("thesis_alignment", "").lower()
+        if any(kw in thesis_alignment for kw in ["strong", "direct", "perfect", "excellent", "high"]):
             score += 25
-        elif "partial" in thesis_alignment.lower() or "related" in thesis_alignment.lower():
+        elif any(kw in thesis_alignment for kw in ["partial", "related", "good", "moderate", "aligned"]):
             score += 15
-        elif "tangential" in thesis_alignment.lower():
-            score += 5
+        elif any(kw in thesis_alignment for kw in ["tangential", "indirect", "possible", "potential"]):
+            score += 8
+        elif thesis_alignment and "weak" not in thesis_alignment and "none" not in thesis_alignment:
+            score += 10  # Default
 
         return min(score, 100)
 
@@ -148,13 +160,30 @@ class MatchmakerService:
         print(f"[MATCHMAKER] Baking in: {founder_name} -> {investor_name}")
         print(f"[MATCHMAKER] LinkedIn - Founder: {founder_linkedin[:30] if founder_linkedin else 'None'}...")
 
+        # Use Airtable record ID (row_number) for linked records, not custom contact_id
+        # The row_number contains the actual "recXXX" ID needed for linked record fields
+        founder_record_id = founder.get("row_number") or founder.get("contact_id", "")
+        investor_record_id = investor.get("row_number") or investor.get("contact_id", "")
+
+        # FIX: Validate startup_name - ensure we get company name, not industry
+        startup_name = founder.get("company", "")
+        industry_keywords = ["fintech", "ai", "saas", "healthtech", "edtech", "biotech",
+                            "cleantech", "proptech", "insurtech", "regtech", "agtech",
+                            "medtech", "martech", "adtech", "legaltech", "govtech",
+                            "technology", "software", "hardware", "services", "consulting"]
+        if startup_name and startup_name.lower() in industry_keywords:
+            # Wrong field grabbed - this is an industry, not a company name
+            # Try to use the full_name + "Company" as fallback
+            print(f"[MATCHMAKER WARNING] '{startup_name}' looks like an industry, not a company name")
+            startup_name = f"{founder_name}'s Startup"  # Fallback
+
         match = Match(
-            founder_contact_id=founder.get("contact_id", ""),
-            investor_contact_id=investor.get("contact_id", ""),
+            founder_contact_id=founder_record_id,
+            investor_contact_id=investor_record_id,
             founder_email=founder.get("email", ""),
             founder_linkedin=founder_linkedin,           # Person's LinkedIn (from contact_linkedin_url)
             founder_name=founder_name,
-            startup_name=founder.get("company", ""),
+            startup_name=startup_name,
             investor_email=investor.get("email", ""),
             investor_firm=investor.get("company", ""),
             investor_name=investor_name,
@@ -300,9 +329,15 @@ class MatchmakerService:
                     # Create match
                     match = self.create_match_from_analysis(founder, investor, analysis)
 
+                    # Debug: Log score for every pair
+                    print(f"[MATCHMAKER] Score: {match.match_score}/100 for {founder.get('full_name', 'Unknown')} -> {investor.get('full_name', 'Unknown')}")
+                    print(f"[MATCHMAKER]   Analysis: sector={analysis.get('sector_fit', 'N/A')[:30]}, stage={analysis.get('stage_alignment', 'N/A')[:30]}")
+
                     # Only include matches with score >= 50
                     if match.match_score >= 50:
                         matches.append(match)
+                    else:
+                        print(f"[MATCHMAKER]   Skipped (below threshold)")
 
                 except Exception as e:
                     print(f"Error analyzing pair: {e}")

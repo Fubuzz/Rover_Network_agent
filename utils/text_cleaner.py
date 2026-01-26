@@ -1,10 +1,51 @@
 """
 Text Cleaner for Contact Field Values.
 Cleans raw AI-extracted text to store only clean, normalized values.
+Includes input sanitization for security.
 """
 
 import re
 from typing import Dict, Any, Optional
+
+
+def sanitize_input(text: str, max_length: int = 5000) -> str:
+    """
+    Sanitize user input to prevent issues and security vulnerabilities.
+
+    - Removes control characters (except newline/tab)
+    - Normalizes whitespace
+    - Limits length to prevent memory issues
+    - Removes potential script injection patterns
+
+    Args:
+        text: Raw user input
+        max_length: Maximum allowed length (default 5000)
+
+    Returns:
+        Sanitized text safe for processing
+    """
+    if not text:
+        return ""
+
+    # Remove control characters (keep printable + newline/tab)
+    text = ''.join(c for c in text if c.isprintable() or c in '\n\t')
+
+    # Normalize whitespace (collapse multiple spaces/newlines)
+    text = ' '.join(text.split())
+
+    # Limit length to prevent memory issues
+    if len(text) > max_length:
+        text = text[:max_length] + "..."
+
+    # Remove potential script injection patterns (XSS prevention)
+    text = re.sub(r'<script.*?>.*?</script>', '', text, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r'javascript:', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'on\w+\s*=', '', text, flags=re.IGNORECASE)  # onclick=, onerror=, etc.
+
+    # Remove null bytes (potential injection)
+    text = text.replace('\x00', '')
+
+    return text.strip()
 
 
 # Patterns to strip from the BEGINNING of field values
