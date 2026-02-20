@@ -124,7 +124,17 @@ SHEET_HEADERS = [
     "website",
     "address",
     "userId",
-    "linkedin_link"
+    "linkedin_link",
+    # V3 New Fields
+    "relationship_score",
+    "last_interaction_date",
+    "interaction_count",
+    "follow_up_date",
+    "follow_up_reason",
+    "introduced_by",
+    "introduced_to",
+    "priority",
+    "relationship_stage"
 ]
 
 # Column index mapping
@@ -184,6 +194,17 @@ class Contact:
     address: Optional[str] = None
     user_id: Optional[str] = None
     linkedin_link: Optional[str] = None
+    
+    # V3 New Fields - Relationship Intelligence
+    relationship_score: Optional[int] = None  # 0-100 relationship health score
+    last_interaction_date: Optional[str] = None  # When did you last interact?
+    interaction_count: Optional[int] = 0  # How many times have you interacted?
+    follow_up_date: Optional[str] = None  # When should you follow up?
+    follow_up_reason: Optional[str] = None  # Why follow up?
+    introduced_by: Optional[str] = None  # Who introduced you?
+    introduced_to: Optional[str] = None  # Who have you introduced them to?
+    priority: Optional[str] = None  # high/medium/low
+    relationship_stage: Optional[str] = None  # new/building/strong/dormant/lost
     
     # Internal
     row_number: Optional[int] = None
@@ -346,7 +367,17 @@ class Contact:
             self.website or "",
             self.address or "",
             self.user_id or "",
-            self.linkedin_link or self.linkedin_url or ""
+            self.linkedin_link or self.linkedin_url or "",
+            # V3 New Fields
+            str(self.relationship_score) if self.relationship_score is not None else "",
+            self.last_interaction_date or "",
+            str(self.interaction_count) if self.interaction_count is not None else "0",
+            self.follow_up_date or "",
+            self.follow_up_reason or "",
+            self.introduced_by or "",
+            self.introduced_to or "",
+            self.priority or "",
+            self.relationship_stage or ""
         ]
     
     @classmethod
@@ -394,6 +425,16 @@ class Contact:
             address=row[34] or None,
             user_id=row[35] or None,
             linkedin_link=row[36] if len(row) > 36 else None,
+            # V3 New Fields
+            relationship_score=int(row[37]) if len(row) > 37 and row[37] and row[37].strip().isdigit() else None,
+            last_interaction_date=row[38] if len(row) > 38 else None,
+            interaction_count=int(row[39]) if len(row) > 39 and row[39] and row[39].strip().isdigit() else 0,
+            follow_up_date=row[40] if len(row) > 40 else None,
+            follow_up_reason=row[41] if len(row) > 41 else None,
+            introduced_by=row[42] if len(row) > 42 else None,
+            introduced_to=row[43] if len(row) > 43 else None,
+            priority=row[44] if len(row) > 44 else None,
+            relationship_stage=row[45] if len(row) > 45 else None,
             row_number=row_number
         )
         

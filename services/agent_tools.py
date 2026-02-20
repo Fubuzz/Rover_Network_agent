@@ -1105,6 +1105,266 @@ Provide a brief, informative summary suitable for a contact profile."""
 
         draft = self.session.draft
         return f"**Draft Status for {draft.name}:**\n\n{draft.get_display_card()}"
+    
+    async def log_interaction(self, name: str, interaction_type: str, context: str = None) -> str:
+        """
+        Log an interaction with a contact.
+        
+        Args:
+            name: Contact name
+            interaction_type: Type of interaction (met, called, emailed, introduced, messaged)
+            context: Optional context about the interaction
+        
+        Returns:
+            Confirmation message
+        """
+        from services.interaction_tracker import get_interaction_tracker
+        
+        logger.info(f"[TOOL] log_interaction: name={name}, type={interaction_type}")
+        
+        # Find the contact
+        contact = find_contact_in_storage(name)
+        if not contact:
+            return f"Contact '{name}' not found. Add them first."
+        
+        # Log the interaction
+        tracker = get_interaction_tracker()
+        success = tracker.log_interaction(self.user_id, contact.name, interaction_type, context)
+        
+        if success:
+            _user_last_action[self.user_id] = f"logged {interaction_type} with '{name}'"
+            
+            context_str = f" ({context})" if context else ""
+            return f"✅ Logged {interaction_type} with **{name}**{context_str}"
+        
+        return f"Failed to log interaction with {name}."
+    
+    async def set_follow_up(self, name: str, date: str, reason: str = None) -> str:
+        """
+        Set a follow-up reminder for a contact.
+        
+        Args:
+            name: Contact name
+            date: Follow-up date (YYYY-MM-DD format)
+            reason: Optional reason for follow-up
+        
+        Returns:
+            Confirmation message
+        """
+        logger.info(f"[TOOL] set_follow_up: name={name}, date={date}, reason={reason}")
+        
+        # Find the contact
+        contact = find_contact_in_storage(name)
+        if not contact:
+            return f"Contact '{name}' not found. Add them first."
+        
+        # Validate date format
+        try:
+            from datetime import datetime
+            datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            return f"Invalid date format. Use YYYY-MM-DD (e.g., 2026-03-15)"
+        
+        # Update contact with follow-up info
+        sheets = get_sheets_service()
+        sheets._ensure_initialized()
+        
+        updates = {
+            "follow_up_date": date,
+            "follow_up_reason": reason or ""
+        }
+        
+        success = sheets.update_contact(name, updates)
+        
+        if success:
+            _user_last_action[self.user_id] = f"set follow-up for '{name}'"
+            
+            reason_str = f": {reason}" if reason else ""
+            return f"⏰ Follow-up set for **{name}** on {date}{reason_str}"
+        
+        return f"Failed to set follow-up for {name}."
+    
+    async def get_follow_ups(self) -> str:
+        """
+        Get all pending follow-ups sorted by date.
+        
+        Returns:
+            List of contacts with pending follow-ups
+        """
+        logger.info(f"[TOOL] get_follow_ups")
+        
+        from services.interaction_tracker import get_interaction_tracker
+        from datetime import datetime
+        
+        tracker = get_interaction_tracker()
+        contacts = tracker.get_contacts_needing_follow_up(self.user_id)
+        
+        if not contacts:
+            return "No pending follow-ups. You're all caught up! ✅"
+        
+        # Sort by date
+        def parse_date(contact):
+            try:
+                if len(contact.follow_up_date) <= 10:
+                    return datetime.strptime(contact.follow_up_date, "%Y-%m-%d")
+                else:
+                    return datetime.strptime(contact.follow_up_date, "%Y-%m-%d %H:%M:%S")
+            except:
+                return datetime.max
+        
+        contacts.sort(key=parse_date)
+        
+        # Format response
+        response = f"**📅 Pending Follow-ups ({len(contacts)}):**\n\n"
+        
+        today = datetime.now().date()
+        for contact in contacts[:10]:  # Limit to 10
+            try:
+                if len(contact.follow_up_date) <= 10:
+                    follow_up = datetime.strptime(contact.follow_up_date, "%Y-%m-%d").date()
+                else:
+                    follow_up = datetime.strptime(contact.follow_up_date, "%Y-%m-%d %H:%M:%S").date()
+                
+                days_diff = (follow_up - today).days
+                
+                if days_diff < 0:
+                    urgency = f"⚠️ {abs(days_diff)} days overdue"
+                elif days_diff == 0:
+                    urgency = "🔥 TODAY"
+                elif days_diff == 1:
+                    urgency = "📌 Tomorrow"
+                elif days_diff <= 7:
+                    urgency = f"📆 In {days_diff} days"
+                else:
+                    urgency = f"📆 {contact.follow_up_date}"
+                
+                response += f"• **{contact.name}** - {urgency}\n"
+                if contact.company:
+                    response += f"  {contact.company}"
+                if contact.follow_up_reason:
+                    response += f"\n  Reason: {contact.follow_up_reason}"
+                response += "\n\n"
+                
+            except Exception as e:
+                logger.error(f"Error formatting follow-up for {contact.name}: {e}")
+                continue
+        
+        _user_last_action[self.user_id] = "viewed follow-ups"
+        
+        return response.strip()
+    
+    async def get_relationship_health(self, name: str = None) -> str:
+        """
+        Calculate and return relationship score for a contact.
+        
+        Args:
+            name: Contact name (optional - uses current contact if not specified)
+        
+        Returns:
+            Relationship health report
+        """
+        from services.interaction_tracker import get_interaction_tracker
+        
+        # Determine which contact to analyze
+        if not name:
+            draft = self.session.draft if self.session.has_draft() else None
+            pending = self.memory.get_pending_contact(self.user_id)
+            
+            if draft:
+                name = draft.name
+            elif pending:
+                name = pending.name
+            else:
+                last = _user_last_contact.get(self.user_id)
+                if last:
+                    name = last
+                else:
+                    return "Which contact? Specify a name or add a contact first."
+        
+        logger.info(f"[TOOL] get_relationship_health: name={name}")
+        
+        # Find the contact
+        contact = find_contact_in_storage(name)
+        if not contact:
+            return f"Contact '{name}' not found."
+        
+        # Calculate relationship score
+        tracker = get_interaction_tracker()
+        score = tracker.calculate_relationship_score(contact.name)
+        
+        # Determine relationship stage
+        if score >= 80:
+            stage = "💎 Strong"
+            stage_emoji = "💪"
+        elif score >= 60:
+            stage = "🌱 Building"
+            stage_emoji = "📈"
+        elif score >= 40:
+            stage = "⚡ Active"
+            stage_emoji = "👍"
+        elif score >= 20:
+            stage = "⚠️ Cooling"
+            stage_emoji = "❄️"
+        else:
+            stage = "💀 Dormant"
+            stage_emoji = "⏰"
+        
+        # Build response
+        response = f"**{stage_emoji} Relationship Health: {contact.name}**\n\n"
+        response += f"**Score:** {score}/100 - {stage}\n\n"
+        
+        # Breakdown
+        response += "**Breakdown:**\n"
+        response += f"• Base score: 50\n"
+        
+        if contact.research_quality or contact.linkedin_summary or contact.company_description:
+            response += f"• Enriched: +20\n"
+        
+        interaction_count = contact.interaction_count or 0
+        if interaction_count > 0:
+            bonus = min(interaction_count * 10, 40)
+            response += f"• Interactions ({interaction_count}): +{bonus}\n"
+        
+        if contact.introduced_to:
+            response += f"• Introduced to someone: +15\n"
+        
+        if contact.introduced_by:
+            response += f"• Introduced by {contact.introduced_by}: +10\n"
+        
+        # Decay
+        if contact.last_interaction_date:
+            from datetime import datetime
+            try:
+                last_interaction = datetime.strptime(contact.last_interaction_date, "%Y-%m-%d %H:%M:%S")
+                weeks_since = (datetime.now() - last_interaction).days / 7
+                
+                if weeks_since > 0:
+                    decay = int(weeks_since * 5)
+                    response += f"• Decay ({int(weeks_since)} weeks): -{decay}\n"
+                
+                if weeks_since > 12:
+                    response += f"• Dormant penalty: -20\n"
+            except:
+                pass
+        
+        # Recommendations
+        response += f"\n**💡 Recommendations:**\n"
+        
+        if score < 40:
+            response += f"⚠️ This relationship needs attention!\n"
+            response += f"• Schedule a follow-up soon\n"
+            response += f"• Reach out with a genuine check-in\n"
+        elif score < 60:
+            response += f"Keep nurturing this relationship:\n"
+            response += f"• Regular check-ins help maintain momentum\n"
+        else:
+            response += f"✅ This is a healthy relationship!\n"
+            response += f"• Keep up the regular contact\n"
+        
+        _user_last_action[self.user_id] = f"viewed relationship health for '{name}'"
+        _user_last_contact[self.user_id] = name
+        
+        return response
 
     # Utility method to execute a tool by name
     async def execute(self, tool_name: str, arguments: Dict[str, Any]) -> str:
@@ -1123,6 +1383,11 @@ Provide a brief, informative summary suitable for a contact profile."""
             'enrich_contact': self.enrich_contact,
             'deep_research': self.deep_research,
             'get_draft_status': self.get_draft_status,
+            # V3 New Tools
+            'log_interaction': self.log_interaction,
+            'set_follow_up': self.set_follow_up,
+            'get_follow_ups': self.get_follow_ups,
+            'get_relationship_health': self.get_relationship_health,
         }
 
         if tool_name not in tool_map:

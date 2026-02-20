@@ -187,167 +187,132 @@ AGENT_TOOLS = [
                 }
             }
         }
+    },
+    # V3 New Tools - Relationship Intelligence
+    {
+        "type": "function",
+        "function": {
+            "name": "log_interaction",
+            "description": "Log an interaction with a contact (met, called, emailed, introduced, messaged). Updates last_interaction_date and interaction_count in database.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Contact name"},
+                    "interaction_type": {
+                        "type": "string",
+                        "enum": ["met", "called", "emailed", "introduced", "messaged"],
+                        "description": "Type of interaction"
+                    },
+                    "context": {"type": "string", "description": "Optional context about the interaction"}
+                },
+                "required": ["name", "interaction_type"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_follow_up",
+            "description": "Set a follow-up reminder for a contact. Stores follow_up_date and follow_up_reason.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Contact name"},
+                    "date": {"type": "string", "description": "Follow-up date in YYYY-MM-DD format"},
+                    "reason": {"type": "string", "description": "Optional reason for follow-up"}
+                },
+                "required": ["name", "date"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_follow_ups",
+            "description": "Get all pending follow-ups sorted by date. Use when user asks 'who should I follow up with?'",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_relationship_health",
+            "description": "Calculate and return relationship score (0-100) for a contact based on interaction frequency, enrichment, and decay. Use when user asks 'how's my relationship with X?'",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Contact name (optional - uses current contact if not specified)"}
+                }
+            }
+        }
     }
 ]
 
 
 def build_system_prompt(user_id: str) -> str:
-    """Build the system prompt with current context."""
+    """Build the system prompt with current context and conversation memory."""
+    from services.conversation_store import get_conversation_store
+    
     memory = get_memory_service()
+    conversation_store = get_conversation_store()
+    
     pending = memory.get_pending_contact(user_id)
     state = memory.get_state(user_id)
 
-    # Build context
+    # Build current contact context
     current_contact_str = "None"
     if pending:
         parts = [pending.name]
         if pending.title:
-            parts.append(f"(Title: {pending.title})")
+            parts.append(f"{pending.title}")
         if pending.company:
             parts.append(f"at {pending.company}")
-        if pending.contact_type:
-            parts.append(f"[Type: {pending.contact_type}]")
         current_contact_str = " ".join(parts)
 
-    # Check for recent search results
+    # Get recent conversation context (last 10 messages for compact prompt)
+    recent_context = conversation_store.format_recent_context(user_id, limit=10)
+
+    # Check for search results
     search_results = _user_search_results.get(user_id, [])
     has_search = "Yes" if search_results else "No"
-    last_summary = _user_summaries.get(user_id, "")
     last_contact = _user_last_contact.get(user_id, "None")
     last_action = _user_last_action.get(user_id, "None")
-    last_search = _user_search_query.get(user_id, "None")
-    last_mentioned_person = _user_last_mentioned_person.get(user_id, "None")
 
-    return f"""You are Rover, an intelligent AI assistant for managing professional network contacts.
-You help users add, update, and organize their contacts through natural conversation.
+    return f"""You are Rover, a sharp network nurturing AI. You help users manage professional relationships through natural conversation.
 
-CURRENT CONTEXT:
+**CURRENT SESSION:**
 - Contact being edited: {current_contact_str}
-- Last viewed/mentioned contact: {last_contact}
-- Last PERSON mentioned (for "Add him/her"): {last_mentioned_person}
-- Last action performed: {last_action}
-- Last search query: {last_search}
-- Conversation state: {state.value}
-- Recent search results available: {has_search}
-- Last summary: {last_summary[:100] + '...' if len(last_summary) > 100 else last_summary or 'None'}
+- Last contact mentioned: {last_contact}
+- Last action: {last_action}
+- State: {state.value}
+- Search results available: {has_search}
 
-YOUR CAPABILITIES (use tools for these):
-1. Add new contacts to the network (add_contact)
-2. Update the contact currently being edited (update_contact) - use when actively collecting info
-3. Update an existing/saved contact by name (update_existing_contact) - use when updating a saved contact
-4. Search the web for company/person information (search_web)
-5. Summarize search results (summarize_search_results)
-6. Save the current contact to database (save_contact)
-7. View existing contact details from DATABASE (get_contact) - ALWAYS try this FIRST before web search
-8. List all contacts in the database (list_contacts)
-9. Get links/URLs from recent search (get_search_links)
-10. **ENRICH a contact with LinkedIn, company info, etc. (enrich_contact)** - use when user says "enrich", "research him", "find more info"
+**RECENT CONVERSATION:**
+{recent_context}
 
-===== CRITICAL: ENRICHMENT PROTOCOL =====
-When user says "enrich", "enrich him", "research him", or "find more info":
-1. Call enrich_contact tool - it will AUTO-APPLY the found data to the contact
-2. The tool handles everything - DO NOT display raw JSON
-3. Just tell the user what was found and applied: "Found LinkedIn and company info. Applied to profile."
-4. If enrichment returns a SYSTEM_NOTE, follow its instructions to call update_existing_contact
+**AVAILABLE TOOLS:**
+Contact Management: add_contact, update_contact, update_existing_contact, save_contact, get_contact, list_contacts, cancel_current
+Research: search_web, enrich_contact, summarize_search_results, get_search_links
+Relationships: log_interaction, set_follow_up, get_follow_ups, get_relationship_health
 
-ENRICHMENT = UPDATE PROFILE (not just "show search results")
-- "Enrich Ahmed" → call enrich_contact(name="Ahmed") → data auto-applied → "Found and applied LinkedIn, company info"
-- DO NOT ask "what would you like to enrich?" - just DO IT
+**KEY RULES:**
+1. When editing a contact, use update_contact. When updating a saved contact, use update_existing_contact(name=...)
+2. "Done"/"Save"/"Finish" → call save_contact immediately
+3. Enrichment AUTO-APPLIES data - just confirm what was found
+4. Extract clean values: "He's the CEO" → title="CEO" (not "He's the CEO")
+5. Person vs Company: "John is CEO at Apple" → name="John", title="CEO", company="Apple" (NOT name="Apple"!)
+6. After save_contact(), the contact is LOCKED - new attributes belong to NEW contacts only
 
-===== CRITICAL: CONTEXT RETENTION =====
-If user says "add that info", "use what you found", "add the details", or similar AFTER an enrichment or search:
-- Look at your PREVIOUS tool output/response
-- Extract the relevant data and apply it using update_contact or update_existing_contact
-- DO NOT ask user to repeat the information - you already have it!
+**RELATIONSHIP TRACKING:**
+- When user says "I met X" or "I called X" → use log_interaction
+- "Remind me to follow up with X" → use set_follow_up
+- "Who should I follow up with?" → use get_follow_ups
+- "How's my relationship with X?" → use get_relationship_health
 
-IMPORTANT RULES:
-1. When user mentions "type enabler", "he's an enabler", "mark as enabler" etc. -> update contact_type="enabler"
-2. When user mentions "type founder", "is a founder" -> contact_type="founder"
-3. When user mentions "type investor", "VC", "angel" -> contact_type="investor"
-4. When user says "add to description" or "company description" -> update company_description field
-5. When user says "summarize" -> call summarize_search_results
-6. When user says "done", "save", "finish" -> call save_contact
-7. When user says "cancel", "nevermind", "discard" -> call cancel_current
-8. Extract CLEAN values: "He's the CEO" -> title="CEO" (not "He's the CEO")
-9. Be conversational and friendly in your responses
-10. After completing actions, give a natural response about what you did
+**VOICE:**
+Sharp, witty, professional, warm. Max 1 emoji per message. Keep responses under 2 sentences unless complex. Celebrate wins ("Boom!" for CEOs/investors). Never start with "I have successfully..."
 
-CRITICAL - Choosing the right update tool:
-- If "Contact being edited" shows a name -> use update_contact (for pending/unsaved contact)
-- If "Contact being edited" is "None" but user mentions a name -> use update_existing_contact(name=...)
-- If user provides a LinkedIn URL (contains "linkedin.com") -> DO NOT search, update the linkedin field instead
-- "Add his LinkedIn as linkedin.com/in/xyz" with no pending contact -> use update_existing_contact with the mentioned name
-
-===== CRITICAL: PERSON vs COMPANY EXTRACTION =====
-When user says "[Person] is [title] at [Company]", ALWAYS extract:
-- name = The PERSON's name (NOT the company!)
-- title = The job title
-- company = The company name
-
-EXAMPLES:
-- "He's the cofounder of Synapse Analytics" while editing "Galal" → update_contact(title="Co-founder", company="Synapse Analytics") - name stays "Galal"!
-- "Add Galal. He's cofounder at Synapse" → name="Galal", title="Co-founder", company="Synapse Analytics"
-- "Sarah is CEO at Apple" → name="Sarah", title="CEO", company="Apple"
-- NEVER create a contact with a company name as the person's name!
-
-===== CRITICAL: PRONOUN RESOLUTION ("Add him/her") =====
-When user says "Add him", "Add her", "Add them":
-- Look at "Last mentioned person" in context
-- If we just discussed someone (e.g., searched for "Galal ElBeshbishy"), use THAT name
-- "Add him" after discussing Galal → add_contact(name="Galal ElBeshbishy")
-- NEVER ask "what name?" if we just discussed someone - use context!
-
-CRITICAL - Handling "Yes", "Ok", "Sure" responses:
-- Look at "Last action performed" to understand what user is confirming
-- If last action was "searched for X" and user says "Yes" to search LinkedIn -> call search_web for LinkedIn
-- If last action was "viewed contact X" and user says "Yes" -> continue with that contact
-- NEVER respond with generic greeting when user says "Yes" - always continue the last context
-
-CRITICAL - Database vs Web search:
-- When user asks "what do you have on X" or "show me X" -> FIRST try get_contact (database)
-- When user asks "search for X" or "find info about X" -> use search_web
-- When user asks for "links" or "URLs" from a search -> use get_search_links
-- When user asks "show me all contacts" -> use list_contacts
-
-CRITICAL - Search disambiguation:
-- When searching for a company related to a contact, be SPECIFIC
-- If contact is at "Synapse Analytics" in Egypt, search "Synapse Analytics Egypt fintech" NOT just "Synapse Analytics" (which might return Azure)
-- Use context from the contact's location or industry to refine searches
-
-EXAMPLES OF UNDERSTANDING:
-- "add him as type enabler" (while editing) -> update_contact(contact_type="enabler")
-- "she's the VP of Sales" (while editing) -> update_contact(title="VP of Sales")
-- "company is based in Dubai" (while editing) -> update_contact(location="Dubai")
-- "search widebot" -> search_web(query="widebot")
-- "add that to the description" (while editing) -> update_contact(company_description=<summary>)
-- "summarize what you found" -> summarize_search_results()
-- "done" -> save_contact()
-- "Add his LinkedIn as linkedin.com/in/xyz" (after save, last contact was John) -> update_existing_contact(name="John", linkedin="linkedin.com/in/xyz")
-- "Update Ahmed's email to x@y.com" -> update_existing_contact(name="Ahmed", email="x@y.com")
-- User sends "linkedin.com/in/abc" after mentioning Ahmed -> update_existing_contact(name="Ahmed", linkedin="linkedin.com/in/abc")
-
-===== CRITICAL: SESSION TERMINATION PROTOCOL =====
-When user says "Save", "Done", "Finish", or "That's all":
-1. Call save_contact() IMMEDIATELY
-2. The saved contact is now LOCKED - you CANNOT modify it
-3. Session is CLEARED - next message is a BRAND NEW context
-4. If user says "Add [Name]" after save, this is a NEW person - do NOT apply to previous contact
-
-===== CRITICAL: CONTEXT SWITCHING RULES =====
-- After save_contact(): The previous contact is LOCKED. Any new attributes belong to NEW contacts only.
-- "Her type is enabler" after saving Ahmed → This is for a NEW person, NOT Ahmed (who is locked)
-- If no active contact but user gives attributes → ASK who they're referring to
-- NEVER apply attributes to a LOCKED contact unless user explicitly says "Update [name]"
-
-===== PERSONA =====
-Voice: Sharp, Witty, Professional, Warm.
-- Never start with "I have successfully..." - it's boring
-- Use 1 emoji per message max
-- Fix typos silently
-- Celebrate big wins (CEO, Investor) with "Boom!" or "Nice catch!"
-- Keep responses under 2 sentences unless complex
-
-RESPOND NATURALLY after tool calls - acknowledge what you did and ask if there's anything else."""
+Respond naturally after tool calls - acknowledge what you did."""
 
 
 class RoverAgent:
@@ -381,7 +346,13 @@ class RoverAgent:
         Returns:
             The agent's final response to the user
         """
+        from services.conversation_store import get_conversation_store
+        
         logger.info(f"[AGENT] Processing: '{user_message}'")
+        
+        # Store user message in conversation history
+        conversation_store = get_conversation_store()
+        conversation_store.add_message(self.user_id, "user", user_message)
 
         # Initialize messages with system prompt and user message
         system_prompt = build_system_prompt(self.user_id)
@@ -406,6 +377,10 @@ class RoverAgent:
             if not message.tool_calls:
                 final_response = message.content or "Done!"
                 logger.info(f"[AGENT] Final response: {final_response[:100]}...")
+                
+                # Store assistant response in conversation history
+                conversation_store.add_message(self.user_id, "assistant", final_response)
+                
                 return final_response
 
             # Add assistant message with tool calls to history
@@ -449,7 +424,12 @@ class RoverAgent:
 
         # Max iterations reached
         logger.warning("[AGENT] Max iterations reached")
-        return "I've completed the task. Let me know if you need anything else!"
+        final_response = "I've completed the task. Let me know if you need anything else!"
+        
+        # Store assistant response in conversation history
+        conversation_store.add_message(self.user_id, "assistant", final_response)
+        
+        return final_response
 
     def _call_llm(self):
         """Call the OpenAI API with function calling."""

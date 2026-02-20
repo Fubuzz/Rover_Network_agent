@@ -182,6 +182,26 @@ class AirtableService:
         # Note: address field skipped - Airtable may have formatting requirements
         # if contact.address:
         #     fields["address"] = contact.address
+        
+        # V3 New Fields - Relationship Intelligence
+        if contact.relationship_score is not None:
+            fields["relationship_score"] = contact.relationship_score
+        if contact.last_interaction_date:
+            fields["last_interaction_date"] = contact.last_interaction_date
+        if contact.interaction_count is not None:
+            fields["interaction_count"] = contact.interaction_count
+        if contact.follow_up_date:
+            fields["follow_up_date"] = contact.follow_up_date
+        if contact.follow_up_reason:
+            fields["follow_up_reason"] = contact.follow_up_reason
+        if contact.introduced_by:
+            fields["introduced_by"] = contact.introduced_by
+        if contact.introduced_to:
+            fields["introduced_to"] = contact.introduced_to
+        if contact.priority:
+            fields["priority"] = contact.priority
+        if contact.relationship_stage:
+            fields["relationship_stage"] = contact.relationship_stage
 
         return fields
 
@@ -229,6 +249,16 @@ class AirtableService:
             address=fields.get("address"),
             user_id=fields.get("userId"),
             linkedin_link=fields.get("company_linkedin_url"),  # Airtable column name
+            # V3 New Fields
+            relationship_score=fields.get("relationship_score"),
+            last_interaction_date=fields.get("last_interaction_date"),
+            interaction_count=fields.get("interaction_count", 0),
+            follow_up_date=fields.get("follow_up_date"),
+            follow_up_reason=fields.get("follow_up_reason"),
+            introduced_by=fields.get("introduced_by"),
+            introduced_to=fields.get("introduced_to"),
+            priority=fields.get("priority"),
+            relationship_stage=fields.get("relationship_stage"),
         )
         # Store record ID as row_number (string, but works for our purposes)
         contact.row_number = record_id
@@ -313,7 +343,11 @@ class AirtableService:
                 "industry", "company_stage", "funding_raised", "founder_score",
                 "key_strengths", "stage_fit", "sector_fit", "classified_date",
                 "linkedin_summary", "contact_type", "research_quality", "researched_date",
-                "imported_date", "linkedin_status", "website", "address", "company_linkedin_url"
+                "imported_date", "linkedin_status", "website", "address", "company_linkedin_url",
+                # V3 New Fields
+                "relationship_score", "last_interaction_date", "interaction_count",
+                "follow_up_date", "follow_up_reason", "introduced_by", "introduced_to",
+                "priority", "relationship_stage"
             }
 
             # Field aliases mapping to EXACT Airtable column names
@@ -347,6 +381,16 @@ class AirtableService:
                 "contact_type": "contact_type",
                 "research_quality": "research_quality",
                 "website": "website",
+                # V3 New Fields
+                "relationship_score": "relationship_score",
+                "last_interaction_date": "last_interaction_date",
+                "interaction_count": "interaction_count",
+                "follow_up_date": "follow_up_date",
+                "follow_up_reason": "follow_up_reason",
+                "introduced_by": "introduced_by",
+                "introduced_to": "introduced_to",
+                "priority": "priority",
+                "relationship_stage": "relationship_stage",
             }
 
             airtable_updates = {}
@@ -392,6 +436,44 @@ class AirtableService:
         except Exception as e:
             print(f"Error deleting contact: {e}")
             return False
+    
+    def update_contact_field(self, name: str, field: str, value: Any) -> bool:
+        """
+        Quick single-field update for a contact.
+        
+        Args:
+            name: Contact name
+            field: Field name to update
+            value: New value
+        
+        Returns:
+            True if successful
+        """
+        return self.update_contact(name, {field: value})
+    
+    def get_contacts_with_follow_ups(self) -> List[Contact]:
+        """
+        Get contacts with pending follow-ups (follow_up_date is set and not empty).
+        
+        Returns:
+            List of Contact objects
+        """
+        self._ensure_initialized()
+        
+        try:
+            # Get all contacts and filter client-side for robustness
+            all_contacts = self.get_all_contacts()
+            
+            contacts_with_follow_ups = []
+            for contact in all_contacts:
+                if contact.follow_up_date and contact.follow_up_date.strip():
+                    contacts_with_follow_ups.append(contact)
+            
+            return contacts_with_follow_ups
+            
+        except Exception as e:
+            print(f"Error getting contacts with follow-ups: {e}")
+            return []
 
     def get_contact_by_name(self, name: str) -> Optional[Contact]:
         """Get a contact by name (searches full_name and first_name + last_name)."""
