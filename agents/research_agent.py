@@ -17,6 +17,8 @@ from tools.deep_research_tool import (
     CompanyResearchTool,
     ExtractContactFieldsTool
 )
+from tools.linkedin_scraper_tool import LinkedInProfileScraperTool
+from config import FeatureFlags
 
 
 def create_research_agent() -> Agent:
@@ -33,33 +35,47 @@ def create_research_agent() -> Agent:
         CompanyResearchTool(),
         ExtractContactFieldsTool()
     ]
-    
+
+    # Add LinkedIn profile scraper if enabled
+    if FeatureFlags.LINKEDIN_SCRAPER:
+        tools.append(LinkedInProfileScraperTool())
+
+    linkedin_scraper_note = ""
+    if FeatureFlags.LINKEDIN_SCRAPER:
+        linkedin_scraper_note = """
+
+        LINKEDIN PROFILE SCRAPING:
+        You have access to the scrape_linkedin_profile tool which can extract full profile
+        data directly from LinkedIn. Use it when you have a LinkedIn URL and need detailed
+        information (full experience history, all skills, education, certifications).
+        Note: This tool is slow (10-30 seconds) - only use it when you need comprehensive data."""
+
     return Agent(
         role="Senior Research Analyst",
         goal="""Conduct comprehensive, accurate research on people and companies.
         Find reliable information from multiple sources, cross-validate findings,
         and return structured data that can be directly used to populate contact profiles.
         Never make up information - only report what is found in actual sources.""",
-        backstory="""You are a senior research analyst with 15 years of experience 
+        backstory=f"""You are a senior research analyst with 15 years of experience
         in business intelligence and due diligence. You've worked for top investment firms
         and executive search companies, where accuracy is non-negotiable.
-        
+
         Your methodology:
         1. Always start with LinkedIn - it's the most reliable professional source
         2. Cross-reference with company websites and news sources
         3. Verify titles and roles against multiple sources before confirming
         4. Classify contacts accurately (Founder vs Investor vs Enabler)
         5. Never guess or fabricate information - if uncertain, say so
-        
+
         You're known for your thoroughness and your ability to find hard-to-get information.
         You understand that bad data is worse than no data, so you prioritize accuracy over speed.
-        
+
         Key principles:
         - LinkedIn URL: Only provide if you found the actual profile
         - Contact Type: Founders have started companies, Investors work at VC/PE/Angel firms
         - Company Data: Always verify funding claims with news sources
         - Email: Only include if found in public sources (rare)
-        """,
+        {linkedin_scraper_note}""",
         tools=tools,
         verbose=True,
         allow_delegation=False,
@@ -97,12 +113,15 @@ def create_fast_research_agent() -> Agent:
 
 def get_research_agent_tools() -> List:
     """Get the list of tools for the research agent."""
-    return [
+    tools = [
         DeepPersonResearchTool(),
         LinkedInSearchTool(),
         CompanyResearchTool(),
         ExtractContactFieldsTool()
     ]
+    if FeatureFlags.LINKEDIN_SCRAPER:
+        tools.append(LinkedInProfileScraperTool())
+    return tools
 
 
 # Research task templates

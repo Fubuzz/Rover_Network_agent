@@ -131,6 +131,28 @@ class SMTPConfig:
         return bool(cls.SMTP_USER and cls.SMTP_PASSWORD and cls.SMTP_FROM_EMAIL)
 
 
+class LinkedInConfig:
+    """LinkedIn scraper configuration."""
+    LINKEDIN_EMAIL: str = os.getenv("LINKEDIN_EMAIL", "")
+    LINKEDIN_PASSWORD: str = os.getenv("LINKEDIN_PASSWORD", "")
+    CHROME_USER_DATA_DIR: str = os.getenv("CHROME_USER_DATA_DIR", "")
+    LINKEDIN_HEADLESS: bool = os.getenv("LINKEDIN_HEADLESS", "true").lower() == "true"
+    LINKEDIN_PAGE_TIMEOUT: int = int(os.getenv("LINKEDIN_PAGE_TIMEOUT", "30"))
+    LINKEDIN_ELEMENT_TIMEOUT: int = int(os.getenv("LINKEDIN_ELEMENT_TIMEOUT", "10"))
+
+    @classmethod
+    def validate(cls) -> bool:
+        """Validate LinkedIn configuration."""
+        if not cls.LINKEDIN_EMAIL or not cls.LINKEDIN_PASSWORD:
+            return False
+        return True
+
+    @classmethod
+    def is_configured(cls) -> bool:
+        """Check if LinkedIn scraper is properly configured."""
+        return bool(cls.LINKEDIN_EMAIL and cls.LINKEDIN_PASSWORD)
+
+
 class FeatureFlags:
     """Feature flags for enabling/disabling features."""
     AUTO_ENRICH: bool = os.getenv("AUTO_ENRICH_ENABLED", "true").lower() == "true"
@@ -138,6 +160,7 @@ class FeatureFlags:
     VOICE_TRANSCRIPTION: bool = os.getenv("VOICE_TRANSCRIPTION_ENABLED", "true").lower() == "true"
     IMAGE_OCR: bool = os.getenv("IMAGE_OCR_ENABLED", "true").lower() == "true"
     EMAIL_ENABLED: bool = os.getenv("EMAIL_ENABLED", "true").lower() == "true"
+    LINKEDIN_SCRAPER: bool = os.getenv("LINKEDIN_SCRAPER_ENABLED", "false").lower() == "true"
 
 
 class SessionConfig:
@@ -212,12 +235,17 @@ def get_config_summary() -> dict:
             "level": LoggingConfig.LOG_LEVEL,
             "debug_mode": LoggingConfig.DEBUG_MODE,
         },
+        "linkedin": {
+            "configured": LinkedInConfig.is_configured(),
+            "headless": LinkedInConfig.LINKEDIN_HEADLESS,
+        },
         "features": {
             "auto_enrich": FeatureFlags.AUTO_ENRICH,
             "auto_classify": FeatureFlags.AUTO_CLASSIFY,
             "voice_transcription": FeatureFlags.VOICE_TRANSCRIPTION,
             "image_ocr": FeatureFlags.IMAGE_OCR,
             "email_enabled": FeatureFlags.EMAIL_ENABLED,
+            "linkedin_scraper": FeatureFlags.LINKEDIN_SCRAPER,
         },
         "session": {
             "timeout_seconds": SessionConfig.TIMEOUT_SECONDS,

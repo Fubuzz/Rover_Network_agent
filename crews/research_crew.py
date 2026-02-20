@@ -149,6 +149,56 @@ class ResearchCrew:
         result = self.research_person(name, company)
         return result.get_research_summary()
 
+    def scrape_linkedin_profile(self, profile_url: str) -> Dict[str, Any]:
+        """
+        Scrape a LinkedIn profile directly for comprehensive data.
+
+        Requires LINKEDIN_SCRAPER_ENABLED=true and LinkedIn credentials in .env.
+
+        Args:
+            profile_url: Full LinkedIn profile URL
+
+        Returns:
+            Dict with profile data or error message
+        """
+        from config import LinkedInConfig, FeatureFlags
+
+        if not FeatureFlags.LINKEDIN_SCRAPER:
+            return {"error": "LinkedIn scraper is disabled. Set LINKEDIN_SCRAPER_ENABLED=true in .env."}
+
+        if not LinkedInConfig.is_configured():
+            return {"error": "LinkedIn credentials not configured. Set LINKEDIN_EMAIL and LINKEDIN_PASSWORD in .env."}
+
+        try:
+            from services.linkedin_scraper import LinkedInScraperService
+
+            scraper = LinkedInScraperService(
+                headless=LinkedInConfig.LINKEDIN_HEADLESS,
+                page_timeout=LinkedInConfig.LINKEDIN_PAGE_TIMEOUT,
+                element_timeout=LinkedInConfig.LINKEDIN_ELEMENT_TIMEOUT,
+                linkedin_email=LinkedInConfig.LINKEDIN_EMAIL,
+                linkedin_password=LinkedInConfig.LINKEDIN_PASSWORD,
+                user_data_dir=LinkedInConfig.CHROME_USER_DATA_DIR or None,
+            )
+
+            profile = scraper.scrape_profile_data(profile_url)
+
+            return {
+                "name": profile.name,
+                "headline": profile.headline,
+                "about": profile.about,
+                "location": profile.location,
+                "experience": profile.experience,
+                "education": profile.education,
+                "skills": profile.skills,
+                "certifications": profile.certifications,
+                "source": "linkedin_scraper",
+                "confidence": "high"
+            }
+        except Exception as e:
+            logger.error(f"LinkedIn scraping failed: {e}")
+            return {"error": str(e)}
+
 
 def create_research_crew() -> Crew:
     """
@@ -200,3 +250,8 @@ def find_linkedin(name: str, company: str = None) -> Optional[str]:
 def research_company(company_name: str) -> Dict[str, Any]:
     """Quick access to company research."""
     return get_research_crew().research_company(company_name)
+
+
+def scrape_linkedin_profile(profile_url: str) -> Dict[str, Any]:
+    """Quick access to LinkedIn profile scraping."""
+    return get_research_crew().scrape_linkedin_profile(profile_url)
