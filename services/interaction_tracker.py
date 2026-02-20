@@ -46,9 +46,14 @@ class InteractionTracker:
                 contact_name TEXT NOT NULL,
                 interaction_type TEXT NOT NULL,
                 context TEXT,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                INDEX idx_contact_timestamp (contact_name, timestamp)
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
+        """)
+        
+        # Create index separately (SQLite doesn't support inline INDEX)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_contact_timestamp 
+            ON interactions (contact_name, timestamp)
         """)
         
         conn.commit()

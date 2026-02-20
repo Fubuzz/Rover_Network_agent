@@ -34,9 +34,14 @@ class ConversationStore:
                 user_id TEXT NOT NULL,
                 role TEXT NOT NULL,
                 content TEXT NOT NULL,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                INDEX idx_user_timestamp (user_id, timestamp)
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
+        """)
+        
+        # Create index separately (SQLite doesn't support inline INDEX)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_user_timestamp 
+            ON conversations (user_id, timestamp)
         """)
         
         conn.commit()
