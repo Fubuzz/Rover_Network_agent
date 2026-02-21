@@ -26,6 +26,7 @@ class AirtableService:
         self.drafts_table: Optional[Table] = None
         self._initialized = False
         self._headers = SHEET_HEADERS  # Use schema headers
+        self._v3_fields_exist = False  # Will be set True if V3 columns exist in Airtable
 
     def initialize(self) -> bool:
         """Initialize connection to Airtable."""
@@ -55,7 +56,26 @@ class AirtableService:
             )
 
             self._initialized = True
-            print(f"Connected to Airtable Base: {AirtableConfig.AIRTABLE_BASE_ID}")
+            
+            # Check if V3 fields exist in the table schema via meta API
+            try:
+                import requests as _req
+                _meta_r = _req.get(
+                    f"https://api.airtable.com/v0/meta/bases/{AirtableConfig.AIRTABLE_BASE_ID}/tables",
+                    headers={"Authorization": f"Bearer {AirtableConfig.AIRTABLE_PAT}"}
+                )
+                if _meta_r.status_code == 200:
+                    for _t in _meta_r.json().get("tables", []):
+                        if _t["name"] == AirtableConfig.AIRTABLE_CONTACTS_TABLE:
+                            _field_names = {f["name"] for f in _t.get("fields", [])}
+                            self._v3_fields_exist = "relationship_score" in _field_names
+                            break
+                else:
+                    self._v3_fields_exist = False
+            except Exception:
+                self._v3_fields_exist = False
+            
+            print(f"Connected to Airtable Base: {AirtableConfig.AIRTABLE_BASE_ID} (V3 fields: {self._v3_fields_exist})")
             print(f"Tables: {AirtableConfig.AIRTABLE_CONTACTS_TABLE}, {AirtableConfig.AIRTABLE_MATCHES_TABLE}, {AirtableConfig.AIRTABLE_DRAFTS_TABLE}")
             return True
 
@@ -184,24 +204,30 @@ class AirtableService:
         #     fields["address"] = contact.address
         
         # V3 New Fields - Relationship Intelligence
-        if contact.relationship_score is not None:
-            fields["relationship_score"] = contact.relationship_score
+        # V3 fields — only send if the columns exist in Airtable
+        # These are skipped gracefully to avoid 422 UNKNOWN_FIELD_NAME errors
+        v3_fields = {}
+        if contact.relationship_score:
+            v3_fields["relationship_score"] = contact.relationship_score
         if contact.last_interaction_date:
-            fields["last_interaction_date"] = contact.last_interaction_date
-        if contact.interaction_count is not None:
-            fields["interaction_count"] = contact.interaction_count
+            v3_fields["last_interaction_date"] = contact.last_interaction_date
+        if contact.interaction_count:
+            v3_fields["interaction_count"] = contact.interaction_count
         if contact.follow_up_date:
-            fields["follow_up_date"] = contact.follow_up_date
+            v3_fields["follow_up_date"] = contact.follow_up_date
         if contact.follow_up_reason:
-            fields["follow_up_reason"] = contact.follow_up_reason
+            v3_fields["follow_up_reason"] = contact.follow_up_reason
         if contact.introduced_by:
-            fields["introduced_by"] = contact.introduced_by
+            v3_fields["introduced_by"] = contact.introduced_by
         if contact.introduced_to:
-            fields["introduced_to"] = contact.introduced_to
+            v3_fields["introduced_to"] = contact.introduced_to
         if contact.priority:
-            fields["priority"] = contact.priority
+            v3_fields["priority"] = contact.priority
         if contact.relationship_stage:
-            fields["relationship_stage"] = contact.relationship_stage
+            v3_fields["relationship_stage"] = contact.relationship_stage
+        # Only include V3 fields if they exist in the table (test with first field)
+        if v3_fields and self._v3_fields_exist:
+            fields.update(v3_fields)
 
         return fields
 

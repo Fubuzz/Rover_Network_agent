@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rover — Network Intelligence Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+                    colors: {
+                        navy: { 900: '#0a0e1a', 800: '#111827', 700: '#1a2235', 600: '#232d42' },
+                        accent: { cyan: '#06b6d4', teal: '#14b8a6', purple: '#8b5cf6', pink: '#ec4899', amber: '#f59e0b' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background: #0a0e1a; font-family: 'Inter', sans-serif; }
+        .glass { background: rgba(17, 24, 39, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.06); }
+        .glow-cyan { box-shadow: 0 0 20px rgba(6, 182, 212, 0.15); }
+        .glow-purple { box-shadow: 0 0 20px rgba(139, 92, 246, 0.15); }
+        .glow-teal { box-shadow: 0 0 20px rgba(20, 184, 166, 0.15); }
+        .glow-pink { box-shadow: 0 0 20px rgba(236, 72, 153, 0.15); }
+        .stat-card { transition: transform 0.2s, box-shadow 0.2s; }
+        .stat-card:hover { transform: translateY(-2px); }
+        .pulse-dot { animation: pulse 2s infinite; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .fade-in { animation: fadeIn 0.5s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0a0e1a; }
+        ::-webkit-scrollbar-thumb { background: #232d42; border-radius: 3px; }
+        .tab-active { border-bottom: 2px solid #06b6d4; color: #06b6d4; }
+        .tab-inactive { border-bottom: 2px solid transparent; color: #6b7280; }
+        .tab-inactive:hover { color: #9ca3af; }
+        .contact-row:hover { background: rgba(6, 182, 212, 0.05); }
+        .score-bar { transition: width 0.8s ease-out; }
+    </style>
+</head>
+<body class="text-gray-200 min-h-screen">
+    <!-- Header -->
+    <header class="sticky top-0 z-50 glass border-b border-white/5">
+        <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-cyan-500 to-teal-500 flex items-center justify-center text-white font-bold text-sm">R</div>
+                <div>
+                    <h1 class="text-lg font-semibold text-white tracking-tight">Rover</h1>
+                    <p class="text-xs text-gray-500">Network Intelligence Dashboard</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-4">
+                <div class="flex items-center gap-2 text-xs text-gray-500">
+                    <span class="pulse-dot w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>
+                    <span id="status-text">Live</span>
+                </div>
+                <span id="last-refresh" class="text-xs text-gray-600"></span>
+                <button onclick="refreshAll()" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-gray-400 hover:text-white transition">
+                    ↻ Refresh
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-6 py-6 space-y-6">
+        <!-- Stat Cards Row -->
+        <div id="stat-cards" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 fade-in">
+            <!-- Filled by JS -->
+        </div>
+
+        <!-- Tabs -->
+        <div class="flex gap-6 border-b border-white/5 pb-0">
+            <button onclick="switchTab('overview')" id="tab-overview" class="tab-active pb-3 text-sm font-medium transition">Overview</button>
+            <button onclick="switchTab('contacts')" id="tab-contacts" class="tab-inactive pb-3 text-sm font-medium transition">Contacts</button>
+            <button onclick="switchTab('conversations')" id="tab-conversations" class="tab-inactive pb-3 text-sm font-medium transition">Conversations</button>
+            <button onclick="switchTab('interactions')" id="tab-interactions" class="tab-inactive pb-3 text-sm font-medium transition">Interactions</button>
+            <button onclick="switchTab('agent')" id="tab-agent" class="tab-inactive pb-3 text-sm font-medium transition">Agent</button>
+        </div>
+
+        <!-- Tab Content -->
+        <div id="content-overview" class="tab-content space-y-6">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="glass rounded-xl p-6 glow-cyan">
+                    <h3 class="text-sm font-medium text-gray-400 mb-4">Operations Timeline</h3>
+                    <canvas id="chart-operations" height="200"></canvas>
+                </div>
+                <div class="glass rounded-xl p-6 glow-purple">
+                    <h3 class="text-sm font-medium text-gray-400 mb-4">Message Activity (by hour)</h3>
+                    <canvas id="chart-hourly" height="200"></canvas>
+                </div>
+            </div>
+            <div class="glass rounded-xl p-6">
+                <h3 class="text-sm font-medium text-gray-400 mb-4">Recent Errors</h3>
+                <div id="errors-list" class="space-y-2 max-h-64 overflow-y-auto"></div>
+            </div>
+        </div>
+
+        <div id="content-contacts" class="tab-content space-y-6 hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="glass rounded-xl p-6 glow-teal">
+                    <h3 class="text-sm font-medium text-gray-400 mb-4">Classification Breakdown</h3>
+                    <canvas id="chart-classifications" height="220"></canvas>
+                </div>
+                <div class="glass rounded-xl p-6 glow-purple">
+                    <h3 class="text-sm font-medium text-gray-400 mb-4">Relationship Score Distribution</h3>
+                    <canvas id="chart-scores" height="220"></canvas>
+                </div>
+                <div class="glass rounded-xl p-6 glow-pink">
+                    <h3 class="text-sm font-medium text-gray-400 mb-4">Follow-ups</h3>
+                    <div id="followup-list" class="space-y-2 max-h-56 overflow-y-auto"></div>
+                </div>
+            </div>
+            <div class="glass rounded-xl p-6">
+                <h3 class="text-sm font-medium text-gray-400 mb-4">Contact Directory</h3>
+                <div id="contacts-table" class="overflow-x-auto"></div>
+            </div>
+        </div>
+
+        <div id="content-conversations" class="tab-content space-y-6 hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="glass rounded-xl p-6 glow-cyan">
+                    <h3 class="text-sm font-medium text-gray-400 mb-4">Messages by Role</h3>
+                    <canvas id="chart-roles" height="200"></canvas>
+                </div>
+                <div class="glass rounded-xl p-6 glow-teal">
+                    <h3 class="text-sm font-medium text-gray-400 mb-4">Top Users</h3>
+                    <div id="users-list" class="space-y-2 max-h-56 overflow-y-auto"></div>
+                </div>
+            </div>
+            <div class="glass rounded-xl p-6">
+                <h3 class="text-sm font-medium text-gray-400 mb-4">Recent Messages</h3>
+                <div id="messages-list" class="space-y-2 max-h-96 overflow-y-auto"></div>
+            </div>
+        </div>
+
+        <div id="content-interactions" class="tab-content space-y-6 hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="glass rounded-xl p-6 glow-purple">
+                    <h3 class="text-sm font-medium text-gray-400 mb-4">Interaction Types</h3>
+                    <canvas id="chart-interaction-types" height="200"></canvas>
+                </div>
+                <div class="glass rounded-xl p-6 glow-cyan">
+                    <h3 class="text-sm font-medium text-gray-400 mb-4">Interactions Over Time</h3>
+                    <canvas id="chart-interaction-timeline" height="200"></canvas>
+                </div>
+            </div>
+            <div class="glass rounded-xl p-6">
+                <h3 class="text-sm font-medium text-gray-400 mb-4">Most Interacted Contacts</h3>
+                <div id="interaction-contacts" class="space-y-2 max-h-64 overflow-y-auto"></div>
+            </div>
+        </div>
+
+        <div id="content-agent" class="tab-content space-y-6 hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="glass rounded-xl p-6 glow-teal">
+                    <h3 class="text-sm font-medium text-gray-400 mb-4">Tool Usage</h3>
+                    <canvas id="chart-tools" height="220"></canvas>
+                </div>
+                <div class="glass rounded-xl p-6 glow-pink">
+                    <h3 class="text-sm font-medium text-gray-400 mb-4">Recent Agent Activity</h3>
+                    <div id="agent-activity" class="space-y-2 max-h-56 overflow-y-auto"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="max-w-7xl mx-auto px-6 py-8 text-center text-xs text-gray-600">
+        Rover Network Agent • Built by Daisuke 🐢
+    </footer>
+
+    <script>
+        // Chart.js defaults
+        Chart.defaults.color = '#6b7280';
+        Chart.defaults.borderColor = 'rgba(255,255,255,0.05)';
+        Chart.defaults.font.family = 'Inter';
+        Chart.defaults.font.size = 11;
+
+        const COLORS = {
+            cyan: '#06b6d4', teal: '#14b8a6', purple: '#8b5cf6',
+            pink: '#ec4899', amber: '#f59e0b', emerald: '#10b981',
+            red: '#ef4444', blue: '#3b82f6', indigo: '#6366f1',
+        };
+        const PALETTE = [COLORS.cyan, COLORS.teal, COLORS.purple, COLORS.pink, COLORS.amber, COLORS.emerald, COLORS.blue, COLORS.indigo];
+
+        let charts = {};
+        let currentTab = 'overview';
+
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('[id^="tab-"]').forEach(el => { el.className = 'tab-inactive pb-3 text-sm font-medium transition'; });
+            document.getElementById(`content-${tab}`).classList.remove('hidden');
+            document.getElementById(`tab-${tab}`).className = 'tab-active pb-3 text-sm font-medium transition';
+            currentTab = tab;
+        }
+
+        async function fetchAPI(endpoint) {
+            try {
+                const res = await fetch(`/api/${endpoint}`);
+                return await res.json();
+            } catch (e) {
+                console.error(`API error (${endpoint}):`, e);
+                return null;
+            }
+        }
+
+        function createChart(id, type, data, options = {}) {
+            if (charts[id]) charts[id].destroy();
+            const ctx = document.getElementById(id);
+            if (!ctx) return;
+            charts[id] = new Chart(ctx, { type, data, options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: options.legend !== false, labels: { boxWidth: 10, padding: 12 } } },
+                scales: type === 'doughnut' || type === 'pie' ? {} : {
+                    x: { grid: { display: false }, ticks: { maxTicksLimit: 12 } },
+                    y: { grid: { color: 'rgba(255,255,255,0.03)' }, beginAtZero: true }
+                },
+                ...options
+            }});
+        }
+
+        function statCard(label, value, icon, color, glow) {
+            return `
+                <div class="stat-card glass rounded-xl p-4 ${glow}">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="text-lg">${icon}</span>
+                        <span class="text-xs text-gray-500 uppercase tracking-wider">${label}</span>
+                    </div>
+                    <p class="text-2xl font-bold ${color}">${value}</p>
+                </div>
+            `;
+        }
+
+        function timeAgo(ts) {
+            if (!ts) return '';
+            const diff = (Date.now() - new Date(ts + 'Z').getTime()) / 1000;
+            if (diff < 60) return 'just now';
+            if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+            if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+            return Math.floor(diff/86400) + 'd ago';
+        }
+
+        function scoreBadge(score) {
+            const s = score || 0;
+            const color = s >= 70 ? 'text-emerald-400' : s >= 40 ? 'text-amber-400' : 'text-red-400';
+            const bg = s >= 70 ? 'bg-emerald-400' : s >= 40 ? 'bg-amber-400' : 'bg-red-400';
+            return `<div class="flex items-center gap-2">
+                <span class="${color} font-semibold text-sm">${s}</span>
+                <div class="w-16 h-1.5 rounded-full bg-white/10"><div class="score-bar h-full rounded-full ${bg}" style="width:${s}%"></div></div>
+            </div>`;
+        }
+
+        async function loadOverview() {
+            const data = await fetchAPI('overview');
+            if (!data) return;
+
+            document.getElementById('stat-cards').innerHTML = [
+                statCard('Operations', data.total_operations, '⚡', 'text-cyan-400', 'glow-cyan'),
+                statCard('Success', data.successful_operations, '✓', 'text-emerald-400', 'glow-teal'),
+                statCard('Errors', data.failed_operations, '✕', 'text-red-400', 'glow-pink'),
+                statCard('Users', data.total_users, '👤', 'text-purple-400', 'glow-purple'),
+                statCard('Messages', data.total_messages, '💬', 'text-teal-400', 'glow-teal'),
+                statCard('Contacts', data.unique_contacts, '📇', 'text-amber-400', ''),
+            ].join('');
+        }
+
+        async function loadOperationsChart() {
+            const data = await fetchAPI('operations');
+            if (!data || !data.length) return;
+
+            const hours = [...new Set(data.map(r => r.hour))];
+            const success = hours.map(h => (data.find(r => r.hour === h && r.status === 'success') || {}).count || 0);
+            const fail = hours.map(h => (data.find(r => r.hour === h && r.status !== 'success') || {}).count || 0);
+
+            createChart('chart-operations', 'bar', {
+                labels: hours.map(h => h.slice(5)),
+                datasets: [
+                    { label: 'Success', data: success, backgroundColor: COLORS.teal + '80', borderRadius: 4 },
+                    { label: 'Failed', data: fail, backgroundColor: COLORS.red + '80', borderRadius: 4 },
+                ]
+            }, { plugins: { legend: { display: true } } });
+        }
+
+        async function loadHourlyChart() {
+            const data = await fetchAPI('conversations');
+            if (!data) return;
+
+            const hourly = data.hourly_distribution || [];
+            const labels = Array.from({length: 24}, (_, i) => `${i}:00`);
+            const values = labels.map((_, i) => {
+                const h = String(i).padStart(2, '0');
+                return (hourly.find(r => r.hour === h) || {}).count || 0;
+            });
+
+            createChart('chart-hourly', 'line', {
+                labels,
+                datasets: [{
+                    label: 'Messages',
+                    data: values,
+                    borderColor: COLORS.purple,
+                    backgroundColor: COLORS.purple + '20',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    pointHoverRadius: 4,
+                }]
+            });
+        }
+
+        async function loadErrors() {
+            const data = await fetchAPI('errors');
+            const el = document.getElementById('errors-list');
+            if (!data || !data.length) { el.innerHTML = '<p class="text-gray-600 text-sm">No errors recorded ✨</p>'; return; }
+            el.innerHTML = data.map(e => `
+                <div class="flex items-start gap-3 p-3 rounded-lg bg-white/[0.02] hover:bg-white/[0.04] transition">
+                    <span class="text-red-400 text-xs mt-0.5">●</span>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm text-gray-300 truncate">${e.error_message}</p>
+                        <p class="text-xs text-gray-600">${e.error_type} • ${e.agent_name || ''} • ${timeAgo(e.timestamp)}</p>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function loadContacts() {
+            const data = await fetchAPI('contacts');
+            if (!data || data.error) {
+                document.getElementById('contacts-table').innerHTML = `<p class="text-gray-500 text-sm">${data?.error || 'Could not load contacts'}</p>`;
+                return;
+            }
+
+            // Classification chart
+            const cls = data.classifications || {};
+            createChart('chart-classifications', 'doughnut', {
+                labels: Object.keys(cls),
+                datasets: [{ data: Object.values(cls), backgroundColor: PALETTE, borderWidth: 0 }]
+            }, { cutout: '65%' });
+
+            // Score distribution
+            const sd = data.score_distribution || {};
+            createChart('chart-scores', 'bar', {
+                labels: Object.keys(sd),
+                datasets: [{ label: 'Contacts', data: Object.values(sd), backgroundColor: [COLORS.red+'80', COLORS.amber+'80', COLORS.cyan+'80', COLORS.teal+'80', COLORS.emerald+'80'], borderRadius: 6 }]
+            });
+
+            // Follow-ups
+            const ful = document.getElementById('followup-list');
+            const followups = data.followups || [];
+            if (!followups.length) { ful.innerHTML = '<p class="text-gray-600 text-sm">No pending follow-ups</p>'; }
+            else {
+                ful.innerHTML = followups.slice(0, 10).map(c => `
+                    <div class="p-2 rounded-lg bg-white/[0.02] hover:bg-white/[0.04] transition">
+                        <p class="text-sm text-white font-medium">${c.name}</p>
+                        <p class="text-xs text-gray-500">${c.follow_up_date} • ${c.follow_up_reason || 'No reason'}</p>
+                    </div>
+                `).join('');
+            }
+
+            // Contacts table
+            const contacts = data.contacts || [];
+            document.getElementById('contacts-table').innerHTML = `
+                <table class="w-full text-sm">
+                    <thead><tr class="text-xs text-gray-500 uppercase tracking-wider border-b border-white/5">
+                        <th class="text-left py-2 px-3">Name</th>
+                        <th class="text-left py-2 px-3">Company</th>
+                        <th class="text-left py-2 px-3">Type</th>
+                        <th class="text-left py-2 px-3">Score</th>
+                        <th class="text-left py-2 px-3">Stage</th>
+                        <th class="text-left py-2 px-3">Interactions</th>
+                        <th class="text-left py-2 px-3">Last Contact</th>
+                    </tr></thead>
+                    <tbody>${contacts.map(c => `
+                        <tr class="contact-row border-b border-white/[0.03] transition">
+                            <td class="py-2.5 px-3 text-white font-medium">${c.name}</td>
+                            <td class="py-2.5 px-3 text-gray-400">${c.company || '—'}</td>
+                            <td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded-full text-xs bg-white/5">${c.classification}</span></td>
+                            <td class="py-2.5 px-3">${scoreBadge(c.relationship_score)}</td>
+                            <td class="py-2.5 px-3 text-gray-400 text-xs">${c.relationship_stage}</td>
+                            <td class="py-2.5 px-3 text-gray-400">${c.interaction_count || 0}</td>
+                            <td class="py-2.5 px-3 text-gray-500 text-xs">${c.last_interaction ? timeAgo(c.last_interaction) : '—'}</td>
+                        </tr>
+                    `).join('')}</tbody>
+                </table>
+            `;
+        }
+
+        async function loadConversations() {
+            const data = await fetchAPI('conversations');
+            if (!data) return;
+
+            // Role chart
+            const roles = data.by_role || [];
+            createChart('chart-roles', 'doughnut', {
+                labels: roles.map(r => r.role),
+                datasets: [{ data: roles.map(r => r.count), backgroundColor: [COLORS.cyan, COLORS.purple, COLORS.teal], borderWidth: 0 }]
+            }, { cutout: '65%' });
+
+            // Users list
+            const uel = document.getElementById('users-list');
+            const users = data.by_user || [];
+            uel.innerHTML = users.map(u => `
+                <div class="flex items-center justify-between p-2 rounded-lg bg-white/[0.02]">
+                    <span class="text-sm text-gray-300">User ${u.user_id}</span>
+                    <span class="text-xs text-cyan-400 font-medium">${u.message_count} msgs</span>
+                </div>
+            `).join('') || '<p class="text-gray-600 text-sm">No conversations yet</p>';
+
+            // Recent messages
+            const mel = document.getElementById('messages-list');
+            const msgs = data.recent_messages || [];
+            mel.innerHTML = msgs.map(m => `
+                <div class="flex gap-3 p-2 rounded-lg bg-white/[0.02]">
+                    <span class="text-xs px-1.5 py-0.5 rounded ${m.role === 'user' ? 'bg-cyan-500/10 text-cyan-400' : 'bg-purple-500/10 text-purple-400'}">${m.role}</span>
+                    <p class="text-sm text-gray-400 flex-1 truncate">${m.preview}</p>
+                    <span class="text-xs text-gray-600 shrink-0">${timeAgo(m.timestamp)}</span>
+                </div>
+            `).join('') || '<p class="text-gray-600 text-sm">No messages yet</p>';
+        }
+
+        async function loadInteractions() {
+            const data = await fetchAPI('interactions');
+            if (!data) return;
+
+            // Types chart
+            const types = data.by_type || [];
+            createChart('chart-interaction-types', 'doughnut', {
+                labels: types.map(t => t.interaction_type),
+                datasets: [{ data: types.map(t => t.count), backgroundColor: PALETTE, borderWidth: 0 }]
+            }, { cutout: '65%' });
+
+            // Timeline
+            const tl = data.timeline || [];
+            createChart('chart-interaction-timeline', 'line', {
+                labels: tl.map(t => t.day.slice(5)),
+                datasets: [{
+                    label: 'Interactions',
+                    data: tl.map(t => t.count),
+                    borderColor: COLORS.cyan,
+                    backgroundColor: COLORS.cyan + '20',
+                    fill: true, tension: 0.4, pointRadius: 2
+                }]
+            });
+
+            // Top contacts
+            const cel = document.getElementById('interaction-contacts');
+            const contacts = data.by_contact || [];
+            cel.innerHTML = contacts.map(c => `
+                <div class="flex items-center justify-between p-2 rounded-lg bg-white/[0.02]">
+                    <div>
+                        <p class="text-sm text-white font-medium">${c.contact_name}</p>
+                        <p class="text-xs text-gray-600">${timeAgo(c.last_interaction)}</p>
+                    </div>
+                    <span class="text-xs text-teal-400 font-semibold">${c.interaction_count} interactions</span>
+                </div>
+            `).join('') || '<p class="text-gray-600 text-sm">No interactions recorded yet</p>';
+        }
+
+        async function loadAgent() {
+            const data = await fetchAPI('agent');
+            if (!data) return;
+
+            // Tool usage
+            const tools = data.tool_usage || [];
+            createChart('chart-tools', 'bar', {
+                labels: tools.map(t => t.tool_used),
+                datasets: [{
+                    label: 'Uses',
+                    data: tools.map(t => t.count),
+                    backgroundColor: PALETTE.map(c => c + '80'),
+                    borderRadius: 6
+                }]
+            }, { indexAxis: 'y' });
+
+            // Recent activity
+            const ael = document.getElementById('agent-activity');
+            const activity = data.recent_activity || [];
+            ael.innerHTML = activity.map(a => `
+                <div class="flex items-center gap-3 p-2 rounded-lg bg-white/[0.02]">
+                    <span class="${a.success ? 'text-emerald-400' : 'text-red-400'} text-xs">●</span>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm text-gray-300 truncate">${a.action} ${a.tool_used ? '→ ' + a.tool_used : ''}</p>
+                        <p class="text-xs text-gray-600">${a.agent_name} • ${a.duration_ms}ms • ${timeAgo(a.timestamp)}</p>
+                    </div>
+                </div>
+            `).join('') || '<p class="text-gray-600 text-sm">No agent activity yet</p>';
+        }
+
+        async function refreshAll() {
+            document.getElementById('last-refresh').textContent = 'Refreshing...';
+            await Promise.all([
+                loadOverview(),
+                loadOperationsChart(),
+                loadHourlyChart(),
+                loadErrors(),
+                loadContacts(),
+                loadConversations(),
+                loadInteractions(),
+                loadAgent(),
+            ]);
+            document.getElementById('last-refresh').textContent = `Updated ${new Date().toLocaleTimeString()}`;
+        }
+
+        // Initial load
+        refreshAll();
+        // Auto-refresh every 30s
+        setInterval(refreshAll, 30000);
+    </script>
+</body>
+</html>

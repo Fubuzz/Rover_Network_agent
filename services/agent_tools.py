@@ -1132,6 +1132,21 @@ Provide a brief, informative summary suitable for a contact profile."""
         success = tracker.log_interaction(self.user_id, contact.name, interaction_type, context)
         
         if success:
+            # Also update Airtable: last_interaction_date + increment interaction_count
+            try:
+                from datetime import datetime
+                sheets = get_sheets_service()
+                sheets._ensure_initialized()
+                
+                # Get current interaction count
+                current_count = contact.interaction_count or 0
+                sheets.update_contact(contact.name, {
+                    "last_interaction_date": datetime.now().strftime("%Y-%m-%d"),
+                    "interaction_count": current_count + 1,
+                })
+            except Exception as e:
+                logger.warning(f"[TOOL] Could not update Airtable interaction fields: {e}")
+            
             _user_last_action[self.user_id] = f"logged {interaction_type} with '{name}'"
             
             context_str = f" ({context})" if context else ""
@@ -1159,30 +1174,35 @@ Provide a brief, informative summary suitable for a contact profile."""
             return f"Contact '{name}' not found. Add them first."
         
         # Validate date format
+        from datetime import datetime
         try:
-            from datetime import datetime
             datetime.strptime(date, "%Y-%m-%d")
         except ValueError:
             return f"Invalid date format. Use YYYY-MM-DD (e.g., 2026-03-15)"
         
-        # Update contact with follow-up info
-        sheets = get_sheets_service()
-        sheets._ensure_initialized()
+        # Store follow-up in both SQLite and Airtable
+        from services.interaction_tracker import get_interaction_tracker
+        tracker = get_interaction_tracker()
         
-        updates = {
-            "follow_up_date": date,
-            "follow_up_reason": reason or ""
-        }
+        contact_name = contact.name or name
         
-        success = sheets.update_contact(name, updates)
+        # SQLite (local backup)
+        tracker.set_follow_up(self.user_id, contact_name, date, reason)
         
-        if success:
-            _user_last_action[self.user_id] = f"set follow-up for '{name}'"
-            
-            reason_str = f": {reason}" if reason else ""
-            return f"⏰ Follow-up set for **{name}** on {date}{reason_str}"
+        # Airtable (primary)
+        try:
+            sheets = get_sheets_service()
+            sheets._ensure_initialized()
+            sheets.update_contact(contact_name, {
+                "follow_up_date": date,
+                "follow_up_reason": reason or ""
+            })
+        except Exception as e:
+            logger.warning(f"[TOOL] Could not update Airtable follow-up: {e}")
         
-        return f"Failed to set follow-up for {name}."
+        _user_last_action[self.user_id] = f"set follow-up for '{name}'"
+        reason_str = f": {reason}" if reason else ""
+        return f"⏰ Follow-up set for **{contact_name}** on {date}{reason_str}"
     
     async def get_follow_ups(self) -> str:
         """
@@ -1197,35 +1217,19 @@ Provide a brief, informative summary suitable for a contact profile."""
         from datetime import datetime
         
         tracker = get_interaction_tracker()
-        contacts = tracker.get_contacts_needing_follow_up(self.user_id)
+        follow_ups = tracker.get_pending_follow_ups(self.user_id)
         
-        if not contacts:
+        if not follow_ups:
             return "No pending follow-ups. You're all caught up! ✅"
         
-        # Sort by date
-        def parse_date(contact):
-            try:
-                if len(contact.follow_up_date) <= 10:
-                    return datetime.strptime(contact.follow_up_date, "%Y-%m-%d")
-                else:
-                    return datetime.strptime(contact.follow_up_date, "%Y-%m-%d %H:%M:%S")
-            except:
-                return datetime.max
-        
-        contacts.sort(key=parse_date)
-        
         # Format response
-        response = f"**📅 Pending Follow-ups ({len(contacts)}):**\n\n"
+        response = f"**📅 Pending Follow-ups ({len(follow_ups)}):**\n\n"
         
         today = datetime.now().date()
-        for contact in contacts[:10]:  # Limit to 10
+        for fu in follow_ups[:10]:  # Limit to 10
             try:
-                if len(contact.follow_up_date) <= 10:
-                    follow_up = datetime.strptime(contact.follow_up_date, "%Y-%m-%d").date()
-                else:
-                    follow_up = datetime.strptime(contact.follow_up_date, "%Y-%m-%d %H:%M:%S").date()
-                
-                days_diff = (follow_up - today).days
+                follow_up_date = datetime.strptime(fu['follow_up_date'], "%Y-%m-%d").date()
+                days_diff = (follow_up_date - today).days
                 
                 if days_diff < 0:
                     urgency = f"⚠️ {abs(days_diff)} days overdue"
@@ -1236,17 +1240,15 @@ Provide a brief, informative summary suitable for a contact profile."""
                 elif days_diff <= 7:
                     urgency = f"📆 In {days_diff} days"
                 else:
-                    urgency = f"📆 {contact.follow_up_date}"
+                    urgency = f"📆 {fu['follow_up_date']}"
                 
-                response += f"• **{contact.name}** - {urgency}\n"
-                if contact.company:
-                    response += f"  {contact.company}"
-                if contact.follow_up_reason:
-                    response += f"\n  Reason: {contact.follow_up_reason}"
-                response += "\n\n"
+                response += f"• **{fu['contact_name']}** - {urgency}\n"
+                if fu.get('reason'):
+                    response += f"  Reason: {fu['reason']}\n"
+                response += "\n"
                 
             except Exception as e:
-                logger.error(f"Error formatting follow-up for {contact.name}: {e}")
+                logger.error(f"Error formatting follow-up: {e}")
                 continue
         
         _user_last_action[self.user_id] = "viewed follow-ups"
@@ -1366,6 +1368,217 @@ Provide a brief, informative summary suitable for a contact profile."""
         
         return response
 
+    # === PHASE 2 TOOLS ===
+
+    async def create_introduction(self, connector: str, target: str, reason: str = None) -> str:
+        """
+        Create an introduction between two contacts.
+        
+        Args:
+            connector: Person who can make/facilitate the intro
+            target: Person to be introduced
+            reason: Why this intro makes sense
+        """
+        logger.info(f"[TOOL] create_introduction: {connector} → {target}")
+        
+        from services.introduction_service import get_introduction_service
+        intro_svc = get_introduction_service()
+        
+        # Draft an intro message
+        message = intro_svc.draft_intro_message(connector, target, reason)
+        
+        # Create the record in Airtable
+        record_id = intro_svc.create_introduction(
+            connector_name=connector,
+            target_name=target,
+            reason=reason,
+            status="suggested",
+            intro_message=message
+        )
+        
+        if record_id:
+            # Also update the contacts' introduced_by/introduced_to fields
+            try:
+                sheets = get_sheets_service()
+                sheets._ensure_initialized()
+                sheets.update_contact(connector, {"introduced_to": target})
+                sheets.update_contact(target, {"introduced_by": connector})
+            except Exception as e:
+                logger.warning(f"Could not update intro fields: {e}")
+            
+            response = f"🤝 **Introduction created!**\n\n"
+            response += f"**{connector}** → **{target}**\n"
+            if reason:
+                response += f"Reason: {reason}\n"
+            response += f"\n**Draft message:**\n_{message}_\n"
+            response += f"\nStatus: suggested. Say 'confirm intro' to proceed."
+            return response
+        
+        return f"Failed to create introduction between {connector} and {target}."
+
+    async def get_introductions(self, status: str = None) -> str:
+        """
+        Get all introductions, optionally filtered by status.
+        
+        Args:
+            status: Filter by status (suggested/requested/made/declined). Optional.
+        """
+        logger.info(f"[TOOL] get_introductions: status={status}")
+        
+        from services.introduction_service import get_introduction_service
+        intro_svc = get_introduction_service()
+        
+        intros = intro_svc.get_introductions(status)
+        
+        if not intros:
+            filter_str = f" with status '{status}'" if status else ""
+            return f"No introductions found{filter_str}."
+        
+        response = f"**🤝 Introductions ({len(intros)}):**\n\n"
+        for intro in intros:
+            status_emoji = {"suggested": "💡", "requested": "📨", "made": "✅", "declined": "❌"}.get(intro['status'], "❓")
+            response += f"{status_emoji} **{intro['connector']}** → **{intro['target']}**\n"
+            if intro['reason']:
+                response += f"   Reason: {intro['reason']}\n"
+            response += f"   Status: {intro['status']} | Date: {intro.get('requested_date', 'N/A')}\n"
+            if intro.get('intro_message'):
+                response += f"   Draft: _{intro['intro_message'][:80]}..._\n"
+            response += "\n"
+        
+        return response.strip()
+
+    async def suggest_introductions(self) -> str:
+        """Suggest potential introductions based on your network."""
+        logger.info(f"[TOOL] suggest_introductions")
+        
+        from services.introduction_service import get_introduction_service
+        intro_svc = get_introduction_service()
+        
+        suggestions = intro_svc.suggest_introductions()
+        
+        if not suggestions:
+            return "No introduction suggestions right now. Add more contacts with industry/type info to get better suggestions!"
+        
+        response = f"**💡 Suggested Introductions ({len(suggestions)}):**\n\n"
+        for i, s in enumerate(suggestions[:5], 1):
+            response += f"{i}. **{s['connector']}** ↔ **{s['target']}**\n"
+            response += f"   {s['reason']}\n\n"
+        
+        response += "Say 'introduce [person A] to [person B]' to make it happen!"
+        return response
+
+    async def get_daily_digest(self) -> str:
+        """Get your daily network briefing with follow-ups, decaying relationships, and stats."""
+        logger.info(f"[TOOL] get_daily_digest")
+        
+        from services.digest_service import generate_daily_digest
+        return generate_daily_digest(self.user_id)
+
+    async def get_weekly_report(self) -> str:
+        """Get your weekly network activity report."""
+        logger.info(f"[TOOL] get_weekly_report")
+        
+        from services.digest_service import generate_weekly_report
+        return generate_weekly_report(self.user_id)
+
+    async def search_contacts(self, query: str) -> str:
+        """
+        Search contacts with natural language queries.
+        
+        Args:
+            query: Natural language search like "founders in fintech", "people at Google", "investors I met this month"
+        """
+        logger.info(f"[TOOL] search_contacts: query={query}")
+        
+        sheets = get_sheets_service()
+        sheets._ensure_initialized()
+        
+        all_contacts = sheets.get_all_contacts()
+        
+        if not all_contacts:
+            return "No contacts in your network yet."
+        
+        # Use OpenAI to parse the query and filter
+        import openai, os, json
+        client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        
+        # Build a compact contact list for the LLM
+        contact_summaries = []
+        for c in all_contacts:
+            parts = [c.name or "Unknown"]
+            if c.title: parts.append(c.title)
+            if c.company: parts.append(f"at {c.company}")
+            if c.contact_type: parts.append(f"[{c.contact_type}]")
+            if c.industry: parts.append(f"({c.industry})")
+            if c.email: parts.append(f"<{c.email}>")
+            contact_summaries.append(" | ".join(parts))
+        
+        contacts_text = "\n".join(contact_summaries)
+        
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are a contact search assistant. Given a list of contacts and a search query, return the names of matching contacts as a JSON array. Only return names that genuinely match the query. If none match, return an empty array."},
+                    {"role": "user", "content": f"Contacts:\n{contacts_text}\n\nQuery: {query}\n\nReturn matching contact names as JSON array:"}
+                ],
+                temperature=0,
+                max_tokens=500
+            )
+            
+            result_text = response.choices[0].message.content.strip()
+            # Parse JSON from response
+            if "```" in result_text:
+                result_text = result_text.split("```")[1].replace("json", "").strip()
+            
+            matching_names = json.loads(result_text)
+            
+            if not matching_names:
+                return f"No contacts found matching '{query}'."
+            
+            # Build detailed results
+            results = []
+            for name in matching_names:
+                contact = sheets.get_contact_by_name(name)
+                if contact:
+                    from services.interaction_tracker import get_interaction_tracker
+                    tracker = get_interaction_tracker()
+                    score = tracker.calculate_relationship_score(contact.name)
+                    
+                    info = f"**{contact.name}**"
+                    if contact.title and contact.company:
+                        info += f" — {contact.title} at {contact.company}"
+                    elif contact.company:
+                        info += f" — {contact.company}"
+                    if contact.contact_type:
+                        info += f" [{contact.contact_type}]"
+                    info += f" (score: {score}/100)"
+                    if contact.email:
+                        info += f"\n  📧 {contact.email}"
+                    if contact.phone:
+                        info += f" | 📱 {contact.phone}"
+                    results.append(info)
+            
+            response_text = f"**🔍 Found {len(results)} contacts matching '{query}':**\n\n"
+            response_text += "\n\n".join(results)
+            return response_text
+            
+        except Exception as e:
+            logger.error(f"Search error: {e}")
+            # Fallback: simple text matching
+            query_lower = query.lower()
+            matches = [c for c in all_contacts if 
+                      query_lower in (c.name or "").lower() or
+                      query_lower in (c.company or "").lower() or
+                      query_lower in (c.industry or "").lower() or
+                      query_lower in (c.contact_type or "").lower()]
+            
+            if not matches:
+                return f"No contacts found matching '{query}'."
+            
+            results = [f"• **{c.name}** — {c.company or 'N/A'} ({c.contact_type or 'N/A'})" for c in matches[:10]]
+            return f"**Found {len(matches)} contacts:**\n" + "\n".join(results)
+
     # Utility method to execute a tool by name
     async def execute(self, tool_name: str, arguments: Dict[str, Any]) -> str:
         """Execute a tool by name with arguments."""
@@ -1383,11 +1596,18 @@ Provide a brief, informative summary suitable for a contact profile."""
             'enrich_contact': self.enrich_contact,
             'deep_research': self.deep_research,
             'get_draft_status': self.get_draft_status,
-            # V3 New Tools
+            # V3 Phase 1 Tools
             'log_interaction': self.log_interaction,
             'set_follow_up': self.set_follow_up,
             'get_follow_ups': self.get_follow_ups,
             'get_relationship_health': self.get_relationship_health,
+            # V3 Phase 2 Tools
+            'create_introduction': self.create_introduction,
+            'get_introductions': self.get_introductions,
+            'suggest_introductions': self.suggest_introductions,
+            'get_daily_digest': self.get_daily_digest,
+            'get_weekly_report': self.get_weekly_report,
+            'search_contacts': self.search_contacts,
         }
 
         if tool_name not in tool_map:

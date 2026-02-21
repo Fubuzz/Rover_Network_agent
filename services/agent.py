@@ -5,6 +5,7 @@ This agent reasons about user requests and calls tools to fulfill them.
 
 import json
 import logging
+from datetime import datetime
 from typing import Optional, Dict, Any, List
 
 from openai import OpenAI
@@ -245,6 +246,78 @@ AGENT_TOOLS = [
                 }
             }
         }
+    },
+    # V3 Phase 2 Tools - Introductions, Digest, Search
+    {
+        "type": "function",
+        "function": {
+            "name": "create_introduction",
+            "description": "Create an introduction between two contacts. Logs it in the Introductions table and drafts an intro message. Use when user says 'introduce X to Y' or 'connect X with Y'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "connector": {"type": "string", "description": "Person who can make/facilitate the intro"},
+                    "target": {"type": "string", "description": "Person to be introduced"},
+                    "reason": {"type": "string", "description": "Why this intro makes sense"}
+                },
+                "required": ["connector", "target"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_introductions",
+            "description": "Get all introductions, optionally filtered by status. Use when user asks 'show my introductions' or 'pending intros'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "enum": ["suggested", "requested", "made", "declined"],
+                        "description": "Filter by status (optional)"
+                    }
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "suggest_introductions",
+            "description": "Suggest potential introductions based on your network (industry overlap, founder-investor matches, etc). Use when user asks 'who should I introduce?' or 'suggest intros'.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_daily_digest",
+            "description": "Get your daily network briefing: follow-ups, decaying relationships, stats, suggested actions. Use when user says 'briefing', 'digest', 'morning update', 'what's happening with my network?'.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weekly_report",
+            "description": "Get a weekly network activity report with interaction counts, top relationships, and stats. Use when user asks for 'weekly report' or 'weekly summary'.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_contacts",
+            "description": "Search contacts with natural language. Examples: 'who do I know at Google?', 'show me all founders', 'investors in fintech', 'people I met this month'. Use for any query about the user's network.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Natural language search query about your contacts"}
+                },
+                "required": ["query"]
+            }
+        }
     }
 ]
 
@@ -294,6 +367,8 @@ def build_system_prompt(user_id: str) -> str:
 Contact Management: add_contact, update_contact, update_existing_contact, save_contact, get_contact, list_contacts, cancel_current
 Research: search_web, enrich_contact, summarize_search_results, get_search_links
 Relationships: log_interaction, set_follow_up, get_follow_ups, get_relationship_health
+Introductions: create_introduction, get_introductions, suggest_introductions
+Intelligence: get_daily_digest, get_weekly_report, search_contacts
 
 **KEY RULES:**
 1. When editing a contact, use update_contact. When updating a saved contact, use update_existing_contact(name=...)
@@ -308,6 +383,17 @@ Relationships: log_interaction, set_follow_up, get_follow_ups, get_relationship_
 - "Remind me to follow up with X" → use set_follow_up
 - "Who should I follow up with?" → use get_follow_ups
 - "How's my relationship with X?" → use get_relationship_health
+
+**INTRODUCTIONS:**
+- "Introduce X to Y" → use create_introduction
+- "Show my introductions" → use get_introductions
+- "Suggest intros" → use suggest_introductions
+
+**INTELLIGENCE:**
+- "Briefing" / "morning update" / "what's happening?" → use get_daily_digest
+- "Weekly report" → use get_weekly_report
+- "Who do I know at X?" / "show me founders" / any search → use search_contacts
+- IMPORTANT: Today's date is {datetime.now().strftime('%Y-%m-%d')}. Always use the correct year (2026).
 
 **VOICE:**
 Sharp, witty, professional, warm. Max 1 emoji per message. Keep responses under 2 sentences unless complex. Celebrate wins ("Boom!" for CEOs/investors). Never start with "I have successfully..."

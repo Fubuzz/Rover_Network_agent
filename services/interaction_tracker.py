@@ -56,8 +56,80 @@ class InteractionTracker:
             ON interactions (contact_name, timestamp)
         """)
         
+        # Follow-ups table (stored locally instead of Airtable)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS follow_ups (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                contact_name TEXT NOT NULL,
+                follow_up_date TEXT NOT NULL,
+                reason TEXT,
+                completed INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_follow_up_date
+            ON follow_ups (user_id, follow_up_date, completed)
+        """)
+        
         conn.commit()
         conn.close()
+    
+    def set_follow_up(self, user_id: str, contact_name: str, date: str, reason: str = None) -> bool:
+        """Set a follow-up reminder for a contact (stored in SQLite)."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            # Remove any existing uncompleted follow-up for this contact
+            cursor.execute(
+                "DELETE FROM follow_ups WHERE user_id = ? AND contact_name = ? AND completed = 0",
+                (user_id, contact_name)
+            )
+            cursor.execute(
+                "INSERT INTO follow_ups (user_id, contact_name, follow_up_date, reason) VALUES (?, ?, ?, ?)",
+                (user_id, contact_name, date, reason)
+            )
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logger.error(f"Error setting follow-up: {e}")
+            return False
+    
+    def get_pending_follow_ups(self, user_id: str) -> list:
+        """Get all pending (uncompleted) follow-ups for a user."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM follow_ups WHERE user_id = ? AND completed = 0 ORDER BY follow_up_date ASC",
+                (user_id,)
+            )
+            rows = [dict(r) for r in cursor.fetchall()]
+            conn.close()
+            return rows
+        except Exception as e:
+            logger.error(f"Error getting follow-ups: {e}")
+            return []
+    
+    def complete_follow_up(self, user_id: str, contact_name: str) -> bool:
+        """Mark a follow-up as completed."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE follow_ups SET completed = 1 WHERE user_id = ? AND contact_name = ? AND completed = 0",
+                (user_id, contact_name)
+            )
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logger.error(f"Error completing follow-up: {e}")
+            return False
     
     def log_interaction(self, user_id: str, contact_name: str, interaction_type: str, context: str = None) -> bool:
         """
@@ -72,10 +144,10 @@ class InteractionTracker:
         Returns:
             True if successful
         """
-        valid_types = ["met", "called", "emailed", "introduced", "messaged", "added", "updated", "enriched"]
+        valid_types = ["met", "coffee", "called", "emailed", "introduced", "messaged", "added", "updated", "enriched", "lunch", "dinner", "meeting", "event", "other"]
         if interaction_type not in valid_types:
-            logger.warning(f"Invalid interaction type: {interaction_type}")
-            return False
+            # Be lenient — log it anyway with the given type
+            logger.warning(f"Non-standard interaction type: {interaction_type}, logging anyway")
         
         try:
             conn = sqlite3.connect(self.db_path)
