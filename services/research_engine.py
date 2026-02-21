@@ -65,22 +65,23 @@ class LinkedInSearchStrategy(SearchStrategy):
     def search_person_profile(self, name: str, company: str = None, 
                               location: str = None) -> Optional[str]:
         """
-        Find a person's LinkedIn profile URL with multiple search approaches.
+        Find a person's LinkedIn profile URL with context-aware search.
+        Always uses all available context to find the RIGHT person.
         """
         queries = []
         
-        # Strategy 1: Direct LinkedIn search
-        base_query = f"site:linkedin.com/in {name}"
+        # Most specific first — company + name is the best disambiguator
+        base_query = f'site:linkedin.com/in "{name}"'
+        if company and location:
+            queries.append(f'{base_query} "{company}" {location}')
         if company:
-            queries.append(f"{base_query} {company}")
+            queries.append(f'{base_query} "{company}"')
+        if location:
+            queries.append(f'{base_query} {location}')
         queries.append(base_query)
         
-        # Strategy 2: Include location if available
-        if location:
-            queries.append(f"{base_query} {location}")
-        
-        # Strategy 3: Try with quotes for exact name
-        queries.append(f'site:linkedin.com/in "{name}"')
+        # Fallback without quotes
+        queries.append(f"site:linkedin.com/in {name} {company or ''}")
         
         for query in queries:
             results = self.search(query, max_results=5)
@@ -204,33 +205,33 @@ class CompanySearchStrategy(SearchStrategy):
         if context:
             context_suffix = f" {context}"
         
-        # Strategy 1: General company info
+        # Strategy 1: General company info WITH context (prevents wrong-company matches)
         general_results = self.search(
-            f"{company_name} company{context_suffix}", 
+            f'"{company_name}" company{context_suffix}', 
             max_results=10
         )
         
-        # Strategy 2: Funding/startup info
+        # Strategy 2: Funding/startup info with context
         funding_results = self.search(
-            f"{company_name} funding raised investors startup", 
+            f'"{company_name}"{context_suffix} funding raised investors startup', 
             max_results=5
         )
         
-        # Strategy 3: LinkedIn company page
-        linkedin_results = self.search(
-            f"site:linkedin.com/company {company_name}", 
-            max_results=3
-        )
+        # Strategy 3: LinkedIn company page with context
+        linkedin_query = f'site:linkedin.com/company "{company_name}"'
+        if context:
+            linkedin_query += f" {context}"
+        linkedin_results = self.search(linkedin_query, max_results=3)
         
-        # Strategy 4: News and press
+        # Strategy 4: News and press with context
         news_results = self.search(
-            f"{company_name} news announcement", 
+            f'"{company_name}"{context_suffix} news announcement', 
             max_results=5
         )
         
-        # Strategy 5: Company website
+        # Strategy 5: Company website with context
         website_results = self.search(
-            f"{company_name} official website about", 
+            f'"{company_name}"{context_suffix} official website about', 
             max_results=3
         )
         
@@ -405,6 +406,7 @@ class PersonSearchStrategy(SearchStrategy):
                        known_location: str = None) -> PersonIntelligence:
         """
         Comprehensive person research.
+        Uses ALL known context to build precise, disambiguating queries.
         """
         person = PersonIntelligence(full_name=name)
         
@@ -414,27 +416,47 @@ class PersonSearchStrategy(SearchStrategy):
             person.first_name = name_parts[0]
             person.last_name = " ".join(name_parts[1:]) if len(name_parts) > 1 else None
         
-        # Build search queries with context
+        # Pre-fill known data so searches don't overwrite it
+        if company:
+            person.current_company = company
+        if known_title:
+            person.current_title = known_title
+        if known_location:
+            person.location = known_location
+        
+        # Build PRECISE search queries using all known context
+        # The more context we include, the less likely we get wrong-person results
         context_parts = []
         if company:
-            context_parts.append(company)
+            context_parts.append(f'"{company}"')
         if known_title:
             context_parts.append(known_title)
         if known_location:
             context_parts.append(known_location)
         context = " ".join(context_parts)
         
-        # Strategy 1: General person search
-        general_results = self.search(
-            f"{name} {context}" if context else name,
-            max_results=10
-        )
+        # Strategy 1: Precise search with ALL context (most likely to find right person)
+        precise_query = f'"{name}"'
+        if context:
+            precise_query += f" {context}"
+        general_results = self.search(precise_query, max_results=10)
         
-        # Strategy 2: Professional profile search
-        professional_results = self.search(
-            f"{name} {company if company else ''} CEO CTO founder executive",
-            max_results=5
-        )
+        # Strategy 2: Professional search WITH context (not generic CEO/CTO)
+        if company:
+            professional_results = self.search(
+                f'"{name}" "{company}" professional',
+                max_results=5
+            )
+        elif known_title:
+            professional_results = self.search(
+                f'"{name}" {known_title} professional',
+                max_results=5
+            )
+        else:
+            professional_results = self.search(
+                f'"{name}" professional linkedin',
+                max_results=5
+            )
         
         # Strategy 3: News mentions
         news_results = self.search(
@@ -728,6 +750,10 @@ class DeepResearchEngine:
             
             sources_consulted += 1
         
+        # 3.5. GPT Validation — verify we found the RIGHT person
+        logger.info("Phase 3.5: GPT validation of results...")
+        self._gpt_validate(result, request)
+        
         # 4. Cross-validate and enrich
         logger.info("Phase 4: Cross-validation and enrichment...")
         self._cross_validate(result)
@@ -756,6 +782,110 @@ class DeepResearchEngine:
         )
         
         return result
+    
+    def _gpt_validate(self, result: ResearchResult, request: ResearchRequest):
+        """
+        Use GPT to validate that research results match the intended person.
+        Clears data that doesn't match to prevent wrong-person enrichment.
+        """
+        try:
+            import openai
+            import os
+            
+            client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            
+            # Build what we know about the person
+            known_facts = [f"Name: {request.name}"]
+            if request.company:
+                known_facts.append(f"Company: {request.company}")
+            if request.known_title:
+                known_facts.append(f"Title: {request.known_title}")
+            if request.known_location:
+                known_facts.append(f"Location: {request.known_location}")
+            
+            # Build what we found
+            found_facts = []
+            if result.person:
+                if result.person.current_title:
+                    found_facts.append(f"Title found: {result.person.current_title}")
+                if result.person.current_company:
+                    found_facts.append(f"Company found: {result.person.current_company}")
+                if result.person.location:
+                    found_facts.append(f"Location found: {result.person.location}")
+                if result.person.professional_summary:
+                    found_facts.append(f"Summary: {result.person.professional_summary[:200]}")
+            if result.company:
+                found_facts.append(f"Company info: {result.company.name} - {result.company.description[:200] if result.company.description else 'no description'}")
+            
+            if not found_facts:
+                return  # Nothing to validate
+            
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": """You are a data validation agent. Given what we KNOW about a person and what we FOUND via web search, determine if the found data is about the SAME person or a DIFFERENT person with a similar name.
+
+Reply with ONLY a JSON object:
+{
+    "same_person": true/false,
+    "confidence": "high"/"medium"/"low",
+    "reason": "brief explanation",
+    "corrections": {"field": "corrected_value"} // only if you can correct from context
+}"""},
+                    {"role": "user", "content": f"KNOWN:\n{chr(10).join(known_facts)}\n\nFOUND:\n{chr(10).join(found_facts)}"}
+                ],
+                temperature=0,
+                max_tokens=200
+            )
+            
+            import json
+            text = response.choices[0].message.content.strip()
+            if "```" in text:
+                text = text.split("```")[1].replace("json", "").strip()
+            validation = json.loads(text)
+            
+            if not validation.get("same_person", True):
+                logger.warning(f"[VALIDATION] Wrong person detected for {request.name}: {validation.get('reason', 'unknown')}")
+                result.warnings.append(f"⚠️ Search may have found wrong person: {validation.get('reason', '')}")
+                
+                # Clear unreliable data but keep known facts
+                if result.person:
+                    # Only keep what the user explicitly told us
+                    if request.company:
+                        result.person.current_company = request.company
+                    else:
+                        result.person.current_company = None
+                    if request.known_title:
+                        result.person.current_title = request.known_title
+                    else:
+                        result.person.current_title = None
+                    if request.known_location:
+                        result.person.location = request.known_location
+                    else:
+                        result.person.location = None
+                    result.person.professional_summary = None
+                    result.person.expertise_areas = []
+                
+                # Clear LinkedIn if it's wrong person
+                if result.linkedin_profile:
+                    result.linkedin_profile = None
+                    result.field_mappings.pop("linkedin_url", None)
+                
+                result.overall_confidence = ConfidenceLevel.LOW
+            else:
+                logger.info(f"[VALIDATION] Confirmed correct person: {validation.get('reason', 'match')}")
+                result.accuracy_indicators.append(f"GPT validated: {validation.get('reason', 'data matches')}")
+                
+                # Apply corrections if any
+                corrections = validation.get("corrections", {})
+                if corrections and result.person:
+                    for field, value in corrections.items():
+                        if hasattr(result.person, field) and value:
+                            setattr(result.person, field, value)
+                            logger.info(f"[VALIDATION] Corrected {field} → {value}")
+        
+        except Exception as e:
+            logger.warning(f"[VALIDATION] GPT validation failed (non-critical): {e}")
     
     def _cross_validate(self, result: ResearchResult):
         """Cross-validate data from multiple sources."""
