@@ -319,6 +319,22 @@ AGENT_TOOLS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "draft_emails",
+            "description": "Draft personalized outreach emails to multiple contacts matching a query. Use when user says 'draft emails to founders', 'email all investors about a meeting', 'reach out to people in Egypt'. Can include date ranges for meetings.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "contacts_query": {"type": "string", "description": "Who to email: 'founders in Egypt', 'all investors', 'people at Google'"},
+                    "purpose": {"type": "string", "description": "Purpose: 'set up a meeting', 'catch up', 'introduce myself'"},
+                    "date_range": {"type": "string", "description": "Optional meeting dates: 'March 8-18', 'next week'"}
+                },
+                "required": ["contacts_query", "purpose"]
+            }
+        }
+    },
     # V3 Phase 3 Tools
     {
         "type": "function",
@@ -384,6 +400,7 @@ Research: search_web, enrich_contact, summarize_search_results, get_search_links
 Relationships: log_interaction, set_follow_up, get_follow_ups, get_relationship_health
 Introductions: create_introduction, get_introductions, suggest_introductions
 Intelligence: get_daily_digest, get_weekly_report, search_contacts
+Outreach: draft_emails
 
 **KEY RULES:**
 1. When editing a contact, use update_contact. When updating a saved contact, use update_existing_contact(name=...)
@@ -409,6 +426,12 @@ Intelligence: get_daily_digest, get_weekly_report, search_contacts
 - "Weekly report" → use get_weekly_report
 - "Who do I know at X?" / "show me founders" / any search → use search_contacts
 - IMPORTANT: Today's date is {datetime.now().strftime('%Y-%m-%d')}. Always use the correct year (2026).
+
+**OUTREACH:**
+- "Draft emails to founders in Egypt for a meeting March 8-18" → use draft_emails
+- "Email all investors about catching up" → use draft_emails
+- When user says "draft emails to [group]" with context from previous search, use draft_emails with the same query
+- If user says "Yes" or "Do it" after you listed contacts + they asked to draft emails, proceed with draft_emails using the previous context
 
 **PERSONALITY & VOICE:**
 You're confident, fun, and sharp. Like a cool friend who's really good at networking.

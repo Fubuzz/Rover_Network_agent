@@ -107,11 +107,27 @@ Return ONLY valid JSON, nothing else."""},
                 # Only update fields that are currently empty
                 contact = sheets.get_contact_by_name(name)
                 if contact:
+                    # NEVER overwrite user-provided data — only fill empty fields
+                    # Map Airtable field names to Contact attribute names
+                    field_to_attr = {
+                        "contact_linkedin_url": "linkedin_url",
+                        "title": "title",
+                        "company": "company",
+                        "industry": "industry",
+                        "company_description": "company_description",
+                        "contact_type": "contact_type",
+                        "company_stage": "company_stage",
+                        "key_strengths": "key_strengths",
+                        "address": "address",
+                    }
                     filtered_updates = {}
                     for field, value in updates.items():
-                        current = getattr(contact, field.replace("contact_linkedin_url", "linkedin_url"), None)
+                        attr_name = field_to_attr.get(field, field)
+                        current = getattr(contact, attr_name, None)
                         if not current:
                             filtered_updates[field] = value
+                        else:
+                            logger.info(f"[AUTO-ENRICH] Skipping {field} — already has value: {current[:50] if isinstance(current, str) else current}")
                     
                     if filtered_updates:
                         sheets.update_contact(name, filtered_updates)
