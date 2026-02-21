@@ -610,7 +610,7 @@ class AirtableService:
                 username = linkedin_url
 
             # Search in both LinkedIn URL fields
-            formula = f"OR(FIND('{username}', LOWER({{contact_linkedin_url}})), FIND('{username}', LOWER({{linkedin_url}})))"
+            formula = f"FIND('{username}', LOWER({{contact_linkedin_url}}))"
             records = self.contacts_table.all(formula=formula)
 
             if records:
