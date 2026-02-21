@@ -318,6 +318,21 @@ AGENT_TOOLS = [
                 "required": ["query"]
             }
         }
+    },
+    # V3 Phase 3 Tools
+    {
+        "type": "function",
+        "function": {
+            "name": "process_business_card",
+            "description": "Extract contact info from a business card photo using OCR/Vision AI. Creates and saves the contact automatically. Use when user sends a business card image.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "image_path": {"type": "string", "description": "Path to the business card image file"}
+                },
+                "required": ["image_path"]
+            }
+        }
     }
 ]
 

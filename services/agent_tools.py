@@ -440,7 +440,19 @@ class AgentTools:
             _user_last_action[self.user_id] = f"saved contact '{saved_name}'"
 
             logger.info(f"[TOOL] save_contact: Saved {saved_name}. Session cleared.")
-            return f"Saved {saved_name} to your network! ✅\n\n{format_contact_card(saved_contact)}"
+            
+            # Trigger auto-enrichment in background (if enabled)
+            import os
+            if os.getenv("AUTO_ENRICH_ENABLED", "true").lower() == "true":
+                try:
+                    import asyncio
+                    from services.auto_enrichment import auto_enrich_contact
+                    asyncio.create_task(auto_enrich_contact(saved_name, saved_contact.company))
+                    logger.info(f"[TOOL] Auto-enrichment triggered for {saved_name}")
+                except Exception as e:
+                    logger.warning(f"[TOOL] Auto-enrichment trigger failed: {e}")
+            
+            return f"Saved {saved_name} to your network! ✅ Enriching in background...\n\n{format_contact_card(saved_contact)}"
 
         # Return actual error message if available
         if error_msg:
@@ -1579,6 +1591,46 @@ Provide a brief, informative summary suitable for a contact profile."""
             results = [f"• **{c.name}** — {c.company or 'N/A'} ({c.contact_type or 'N/A'})" for c in matches[:10]]
             return f"**Found {len(matches)} contacts:**\n" + "\n".join(results)
 
+    # === PHASE 3 TOOLS ===
+
+    async def process_business_card(self, image_path: str) -> str:
+        """
+        Extract contact info from a business card photo and create a new contact.
+        
+        Args:
+            image_path: Path to the business card image
+        """
+        logger.info(f"[TOOL] process_business_card: {image_path}")
+        
+        from services.auto_enrichment import extract_business_card
+        
+        extracted = await extract_business_card(image_path)
+        
+        if not extracted or not extracted.get("name"):
+            return "Couldn't extract contact info from this image. Try a clearer photo."
+        
+        name = extracted["name"]
+        
+        # Create the contact via add_contact
+        result = await self.add_contact(
+            name=name,
+            title=extracted.get("title"),
+            company=extracted.get("company"),
+            email=extracted.get("email"),
+            phone=extracted.get("phone"),
+            linkedin=extracted.get("linkedin_url"),
+            notes=extracted.get("notes")
+        )
+        
+        # Auto-save it
+        save_result = await self.save_contact()
+        
+        # Build response
+        fields_found = [k for k, v in extracted.items() if v and k != "name"]
+        return f"📸 Extracted from business card!\n\n**{name}**\n" + \
+               "\n".join(f"• {k}: {v}" for k, v in extracted.items() if v and k != "name") + \
+               f"\n\n{save_result}"
+
     # Utility method to execute a tool by name
     async def execute(self, tool_name: str, arguments: Dict[str, Any]) -> str:
         """Execute a tool by name with arguments."""
@@ -1608,6 +1660,8 @@ Provide a brief, informative summary suitable for a contact profile."""
             'get_daily_digest': self.get_daily_digest,
             'get_weekly_report': self.get_weekly_report,
             'search_contacts': self.search_contacts,
+            # V3 Phase 3 Tools
+            'process_business_card': self.process_business_card,
         }
 
         if tool_name not in tool_map:

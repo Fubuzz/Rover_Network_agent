@@ -151,12 +151,25 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
         photo = update.message.photo[-1]
         file = await context.bot.get_file(photo.file_id)
         
-        # Download image
+        # Download image to temp file
+        import tempfile, os
         image_bytes = await file.download_as_bytearray()
         
-        # Extract using AI service
-        ai_service = get_ai_service()
-        extracted = ai_service.extract_from_image(bytes(image_bytes))
+        # Save to temp file for GPT-4o Vision
+        temp_path = os.path.join(tempfile.gettempdir(), f"card_{user_id}_{photo.file_id}.jpg")
+        with open(temp_path, "wb") as f:
+            f.write(bytes(image_bytes))
+        
+        # Extract using GPT-4o Vision (upgraded from old ai_service)
+        from services.auto_enrichment import extract_business_card
+        import asyncio
+        extracted = await extract_business_card(temp_path)
+        
+        # Clean up temp file
+        try:
+            os.unlink(temp_path)
+        except:
+            pass
         
         if not extracted:
             await update.message.reply_text(
