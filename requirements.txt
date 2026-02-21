@@ -36,8 +36,11 @@ aiofiles>=23.2.1
 # Async Support
 nest-asyncio>=1.5.8
 
-# LinkedIn Scraper (optional - only needed if LINKEDIN_SCRAPER_ENABLED=true)
-selenium>=4.16.0
-undetected-chromedriver>=3.5.4
-beautifulsoup4>=4.12.0
-lxml>=4.9.0
+# LinkedIn Scraper (optional — only on the machine running the scraper server)
+# selenium>=4.16.0
+# undetected-chromedriver>=3.5.4
+# beautifulsoup4>=4.12.0
+# lxml>=4.9.0
+
+# HTTP client for LinkedIn scraper API calls
+httpx>=0.27.0

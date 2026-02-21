@@ -15,18 +15,114 @@ from typing import Optional, Dict
 logger = logging.getLogger('network_agent')
 
 
-async def auto_enrich_contact(name: str, company: str = None) -> Dict:
+async def deep_enrich_from_linkedin(contact_name: str, linkedin_url: str) -> Dict:
+    """
+    Deep enrichment via LinkedIn scraper service.
+    
+    Calls the scraper API (running on Ahmed's Mac) to get full profile data:
+    experience, skills, education, certifications, AI summary.
+    
+    Args:
+        contact_name: Contact's name (for logging)
+        linkedin_url: LinkedIn profile URL
+    
+    Returns:
+        Dict of enriched fields, or empty dict if service unavailable
+    """
+    scraper_url = os.getenv("LINKEDIN_SCRAPER_URL", "http://localhost:8585")
+    
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(
+                f"{scraper_url}/scrape",
+                json={"url": linkedin_url}
+            )
+            
+            if resp.status_code != 200:
+                logger.warning(f"[DEEP-ENRICH] Scraper returned {resp.status_code} for {contact_name}")
+                return {}
+            
+            data = resp.json()
+            logger.info(f"[DEEP-ENRICH] Got LinkedIn data for {contact_name}: "
+                       f"{len(data.get('experience', []))} roles, "
+                       f"{len(data.get('skills', []))} skills")
+            
+            # Map scraped data to Airtable-compatible fields
+            enriched = {}
+            
+            if data.get("headline"):
+                enriched["title"] = data["headline"]
+            
+            if data.get("location"):
+                enriched["address"] = data["location"]
+            
+            if data.get("skills"):
+                enriched["key_strengths"] = ", ".join(data["skills"][:20])
+            
+            if data.get("about"):
+                enriched["company_description"] = data["about"][:2000]
+            
+            # Extract current company/title from latest experience
+            if data.get("experience"):
+                latest = data["experience"][0]
+                if latest.get("company"):
+                    enriched["company"] = latest["company"]
+                if latest.get("title"):
+                    enriched["title"] = latest["title"]
+            
+            # Build a rich summary for notes
+            summary_parts = []
+            if data.get("summary"):
+                summary_parts.append(data["summary"])
+            
+            if data.get("education"):
+                edu_lines = [f"• {e.get('degree', '')} — {e.get('school', '')} ({e.get('duration', '')})"
+                            for e in data["education"]]
+                summary_parts.append("\n📚 Education:\n" + "\n".join(edu_lines))
+            
+            if data.get("experience"):
+                exp_lines = [f"• {e.get('title', '')} at {e.get('company', '')} ({e.get('duration', '')})"
+                            for e in data["experience"][:5]]
+                summary_parts.append("\n💼 Experience:\n" + "\n".join(exp_lines))
+            
+            if summary_parts:
+                enriched["_linkedin_summary"] = "\n\n".join(summary_parts)
+            
+            # Store raw profile data for Rover's intelligence features
+            enriched["_raw_linkedin"] = data
+            
+            return enriched
+    
+    except ImportError:
+        logger.warning("[DEEP-ENRICH] httpx not installed — pip install httpx")
+        return {}
+    except Exception as e:
+        logger.info(f"[DEEP-ENRICH] Scraper service unavailable for {contact_name}: {e}")
+        return {}
+
+
+async def auto_enrich_contact(name: str, company: str = None, linkedin_url: str = None) -> Dict:
     """
     Auto-enrich a contact by searching the web.
+    
+    If a LinkedIn URL is available and the scraper service is running,
+    does deep enrichment first. Falls back to Tavily + GPT-4o-mini.
     
     Args:
         name: Contact's full name
         company: Optional company name for better search results
+        linkedin_url: Optional LinkedIn URL for deep enrichment
     
     Returns:
         Dict of discovered fields
     """
     import openai
+    
+    # Try deep LinkedIn enrichment first
+    linkedin_enriched = {}
+    if linkedin_url:
+        linkedin_enriched = await deep_enrich_from_linkedin(name, linkedin_url)
     
     client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     
@@ -77,6 +173,17 @@ Return ONLY valid JSON, nothing else."""},
         
     except Exception as e:
         logger.error(f"[AUTO-ENRICH] LLM extraction error: {e}")
+    
+    # Merge: LinkedIn deep data takes priority, Tavily fills gaps
+    if linkedin_enriched:
+        # Remove internal keys before merging
+        raw_linkedin = linkedin_enriched.pop("_raw_linkedin", None)
+        linkedin_summary = linkedin_enriched.pop("_linkedin_summary", None)
+        
+        # LinkedIn data fills first, Tavily fills remaining gaps
+        for key, value in linkedin_enriched.items():
+            if key not in discovered or not discovered[key]:
+                discovered[key] = value
     
     # Step 3: Apply discovered fields to Airtable
     if discovered:

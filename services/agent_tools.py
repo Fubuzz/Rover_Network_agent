@@ -447,8 +447,9 @@ class AgentTools:
                 try:
                     import asyncio
                     from services.auto_enrichment import auto_enrich_contact
-                    asyncio.create_task(auto_enrich_contact(saved_name, saved_contact.company))
-                    logger.info(f"[TOOL] Auto-enrichment triggered for {saved_name}")
+                    linkedin = getattr(saved_contact, 'linkedin_url', None)
+                    asyncio.create_task(auto_enrich_contact(saved_name, saved_contact.company, linkedin_url=linkedin))
+                    logger.info(f"[TOOL] Auto-enrichment triggered for {saved_name}" + (" (with LinkedIn)" if linkedin else ""))
                 except Exception as e:
                     logger.warning(f"[TOOL] Auto-enrichment trigger failed: {e}")
             
@@ -1735,6 +1736,71 @@ Provide a brief, informative summary suitable for a contact profile."""
                "\n".join(f"• {k}: {v}" for k, v in extracted.items() if v and k != "name") + \
                f"\n\n{save_result}"
 
+    async def linkedin_lookup(self, url: str) -> str:
+        """
+        Look up a LinkedIn profile and return a rich summary.
+        Requires the LinkedIn scraper service running on Ahmed's Mac.
+        
+        Args:
+            url: LinkedIn profile URL (e.g. https://linkedin.com/in/username)
+        """
+        logger.info(f"[TOOL] linkedin_lookup: {url}")
+        
+        if "linkedin.com/in/" not in url:
+            return "That doesn't look like a LinkedIn profile URL. Need something like linkedin.com/in/username"
+        
+        from services.auto_enrichment import deep_enrich_from_linkedin
+        
+        result = await deep_enrich_from_linkedin("lookup", url)
+        
+        if not result:
+            return "🔌 LinkedIn scraper isn't running right now. Start it on your Mac with:\n`python scraper.py --serve`"
+        
+        raw = result.get("_raw_linkedin", {})
+        summary = result.get("_linkedin_summary", "")
+        
+        if not raw:
+            return "Got a response but no profile data. The profile might be private."
+        
+        # Build a rich response
+        parts = [f"🔍 **{raw.get('name', 'Unknown')}**"]
+        if raw.get("headline"):
+            parts.append(f"_{raw['headline']}_")
+        if raw.get("location"):
+            parts.append(f"📍 {raw['location']}")
+        
+        parts.append("")
+        
+        if raw.get("about"):
+            parts.append(raw["about"][:500])
+            parts.append("")
+        
+        if raw.get("experience"):
+            parts.append("💼 **Experience:**")
+            for exp in raw["experience"][:5]:
+                line = f"• {exp.get('title', '?')} at {exp.get('company', '?')}"
+                if exp.get("duration"):
+                    line += f" ({exp['duration']})"
+                parts.append(line)
+            if len(raw["experience"]) > 5:
+                parts.append(f"  ...+{len(raw['experience']) - 5} more roles")
+            parts.append("")
+        
+        if raw.get("skills"):
+            parts.append(f"🛠 **Skills ({len(raw['skills'])}):** {', '.join(raw['skills'][:15])}")
+            parts.append("")
+        
+        if raw.get("education"):
+            parts.append("🎓 **Education:**")
+            for edu in raw["education"]:
+                parts.append(f"• {edu.get('degree', '')} — {edu.get('school', '')}")
+            parts.append("")
+        
+        # Ask if they want to save
+        parts.append("Want me to save them as a contact? 👀")
+        
+        return "\n".join(parts)
+
     # Utility method to execute a tool by name
     async def execute(self, tool_name: str, arguments: Dict[str, Any]) -> str:
         """Execute a tool by name with arguments."""
@@ -1767,6 +1833,7 @@ Provide a brief, informative summary suitable for a contact profile."""
             'draft_emails': self.draft_emails,
             # V3 Phase 3 Tools
             'process_business_card': self.process_business_card,
+            'linkedin_lookup': self.linkedin_lookup,
         }
 
         if tool_name not in tool_map:

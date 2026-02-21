@@ -1,5 +1,2 @@
-"""LinkedIn profile scraper service package."""
-
-from services.linkedin_scraper.scraper import LinkedInScraperService, LinkedInProfileData
-
-__all__ = ["LinkedInScraperService", "LinkedInProfileData"]
+"""LinkedIn Profile Scraper - Deep enrichment service for Rover."""
+from .scraper import LinkedInScraper, ProfileData

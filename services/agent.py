@@ -349,6 +349,20 @@ AGENT_TOOLS = [
                 "required": ["image_path"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "linkedin_lookup",
+            "description": "Look up a LinkedIn profile URL and return a rich dossier — full work history, skills, education, AI summary. Use when user shares a LinkedIn URL or asks to look someone up on LinkedIn.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "LinkedIn profile URL (e.g. https://linkedin.com/in/username)"}
+                },
+                "required": ["url"]
+            }
+        }
     }
 ]
 
