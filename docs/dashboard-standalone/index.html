@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rover — Network Intelligence</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = { theme: { extend: { fontFamily: { sans: ['Inter', 'system-ui'] } } } }
+    </script>
+    <style>
+        body { background: #06080f; font-family: 'Inter', sans-serif; }
+        .glass { background: rgba(12, 17, 30, 0.8); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.04); }
+        .glow-c { box-shadow: 0 0 30px rgba(6, 182, 212, 0.1); }
+        .glow-p { box-shadow: 0 0 30px rgba(139, 92, 246, 0.1); }
+        .glow-t { box-shadow: 0 0 30px rgba(20, 184, 166, 0.1); }
+        .glow-a { box-shadow: 0 0 30px rgba(245, 158, 11, 0.1); }
+        .stat:hover { transform: translateY(-2px); transition: all 0.2s; }
+        .pulse { animation: pulse 2s infinite; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+        .fade-in { animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+        ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-track { background: #06080f; } ::-webkit-scrollbar-thumb { background: #1a2235; border-radius: 3px; }
+        .tab-on { border-bottom: 2px solid #06b6d4; color: #06b6d4; }
+        .tab-off { border-bottom: 2px solid transparent; color: #4b5563; }
+        .tab-off:hover { color: #9ca3af; }
+        .row:hover { background: rgba(6,182,212,0.03); }
+        .bar { transition: width 0.6s ease-out; }
+        .gradient-text { background: linear-gradient(135deg, #06b6d4, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .modal-bg { background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); }
+        #config-modal input { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); }
+    </style>
+</head>
+<body class="text-gray-300 min-h-screen">
+    <!-- Config Modal -->
+    <div id="config-modal" class="fixed inset-0 modal-bg z-[100] flex items-center justify-center hidden">
+        <div class="glass rounded-2xl p-8 max-w-md w-full mx-4 space-y-4">
+            <h2 class="text-lg font-semibold text-white">🐕 Connect to Airtable</h2>
+            <p class="text-xs text-gray-400">Enter your Airtable credentials to load your network data. These are stored locally in your browser only.</p>
+            <div>
+                <label class="text-[10px] text-gray-500 uppercase tracking-wider">Airtable PAT</label>
+                <input id="cfg-pat" type="password" placeholder="pat..." class="w-full rounded-lg px-3 py-2 text-xs text-white mt-1 focus:outline-none focus:border-cyan-500/50">
+            </div>
+            <div>
+                <label class="text-[10px] text-gray-500 uppercase tracking-wider">Base ID</label>
+                <input id="cfg-base" type="text" placeholder="app..." class="w-full rounded-lg px-3 py-2 text-xs text-white mt-1 focus:outline-none focus:border-cyan-500/50">
+            </div>
+            <div>
+                <label class="text-[10px] text-gray-500 uppercase tracking-wider">Contacts Table</label>
+                <input id="cfg-table" type="text" value="Contacts" class="w-full rounded-lg px-3 py-2 text-xs text-white mt-1 focus:outline-none focus:border-cyan-500/50">
+            </div>
+            <button onclick="saveConfig()" class="w-full py-2 rounded-lg bg-gradient-to-r from-cyan-500 to-violet-500 text-white text-sm font-medium hover:opacity-90 transition">Connect</button>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <header class="sticky top-0 z-50 glass border-b border-white/5">
+        <div class="max-w-[1400px] mx-auto px-6 py-3.5 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-violet-500 flex items-center justify-center text-white font-bold text-xs">R</div>
+                <div>
+                    <h1 class="text-base font-semibold text-white tracking-tight">Rover</h1>
+                    <p class="text-[10px] text-gray-500 -mt-0.5">Network Intelligence</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3">
+                <span class="pulse w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block"></span>
+                <span id="status" class="text-[10px] text-gray-500">Loading...</span>
+                <button onclick="refreshAll()" class="px-2.5 py-1 rounded-md bg-white/5 hover:bg-white/10 text-[10px] text-gray-400 hover:text-white transition">↻</button>
+                <button onclick="showConfig()" class="px-2.5 py-1 rounded-md bg-white/5 hover:bg-white/10 text-[10px] text-gray-400 hover:text-white transition">⚙️</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-[1400px] mx-auto px-6 py-5 space-y-5">
+        <!-- Hero Stats -->
+        <div id="hero" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 fade-in"></div>
+
+        <!-- Tabs -->
+        <div class="flex gap-5 border-b border-white/5">
+            <button onclick="tab('network')" id="t-network" class="tab-on pb-2.5 text-xs font-medium">Network</button>
+            <button onclick="tab('contacts')" id="t-contacts" class="tab-off pb-2.5 text-xs font-medium">Contacts</button>
+            <button onclick="tab('intros')" id="t-intros" class="tab-off pb-2.5 text-xs font-medium">Introductions</button>
+        </div>
+
+        <!-- NETWORK TAB -->
+        <div id="p-network" class="tab-content space-y-5">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                <div class="glass rounded-xl p-5 glow-c">
+                    <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-3">Contact Types</h3>
+                    <canvas id="ch-types" height="200"></canvas>
+                </div>
+                <div class="glass rounded-xl p-5 glow-p">
+                    <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-3">Relationship Scores</h3>
+                    <canvas id="ch-scores" height="200"></canvas>
+                </div>
+                <div class="glass rounded-xl p-5 glow-t">
+                    <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-3">Industries</h3>
+                    <canvas id="ch-industries" height="200"></canvas>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                <div class="glass rounded-xl p-5 glow-a">
+                    <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-3">Relationship Stages</h3>
+                    <canvas id="ch-stages" height="160"></canvas>
+                </div>
+                <div class="glass rounded-xl p-5">
+                    <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-3">Network Intelligence</h3>
+                    <div id="intel" class="space-y-3"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- CONTACTS TAB -->
+        <div id="p-contacts" class="tab-content hidden">
+            <div class="glass rounded-xl p-5 overflow-x-auto">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-sm font-medium text-white">All Contacts</h3>
+                    <input id="contact-search" type="text" placeholder="Search..." class="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white w-48 focus:outline-none focus:border-cyan-500/30" oninput="filterContacts()">
+                </div>
+                <table class="w-full text-xs">
+                    <thead><tr class="text-[10px] text-gray-500 uppercase tracking-wider border-b border-white/5">
+                        <th class="text-left py-2 px-2">Name</th>
+                        <th class="text-left py-2 px-2">Title</th>
+                        <th class="text-left py-2 px-2">Company</th>
+                        <th class="text-left py-2 px-2">Type</th>
+                        <th class="text-left py-2 px-2">Score</th>
+                        <th class="text-left py-2 px-2">Stage</th>
+                        <th class="text-left py-2 px-2">Interactions</th>
+                        <th class="text-left py-2 px-2">Email</th>
+                        <th class="text-left py-2 px-2">Follow-up</th>
+                    </tr></thead>
+                    <tbody id="contacts-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- INTRODUCTIONS TAB -->
+        <div id="p-intros" class="tab-content hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                <div class="glass rounded-xl p-5 glow-c">
+                    <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-3">Intro Status</h3>
+                    <canvas id="ch-intro-status" height="180"></canvas>
+                </div>
+                <div class="lg:col-span-2 glass rounded-xl p-5">
+                    <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-3">Introductions</h3>
+                    <div id="intros-list" class="space-y-2 max-h-80 overflow-y-auto"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="max-w-[1400px] mx-auto px-6 py-6 text-center text-[10px] text-gray-700">
+        Rover Network Agent v3 • Built by Daisuke 🐢
+    </footer>
+
+    <script>
+        Chart.defaults.color = '#4b5563';
+        Chart.defaults.borderColor = 'rgba(255,255,255,0.03)';
+        Chart.defaults.font.family = 'Inter';
+        Chart.defaults.font.size = 10;
+
+        const C = {cyan:'#06b6d4',teal:'#14b8a6',purple:'#8b5cf6',pink:'#ec4899',amber:'#f59e0b',emerald:'#10b981',red:'#ef4444',blue:'#3b82f6',indigo:'#6366f1',sky:'#0ea5e9'};
+        const PAL = [C.cyan,C.teal,C.purple,C.pink,C.amber,C.emerald,C.blue,C.indigo,C.sky,C.red];
+        let charts = {}, allContacts = [], allIntros = [];
+
+        // Config
+        function getConfig() {
+            return {
+                pat: localStorage.getItem('rover_pat') || '',
+                base: localStorage.getItem('rover_base') || '',
+                table: localStorage.getItem('rover_table') || 'Contacts',
+            };
+        }
+        function showConfig() { document.getElementById('config-modal').classList.remove('hidden'); }
+        function hideConfig() { document.getElementById('config-modal').classList.add('hidden'); }
+        function saveConfig() {
+            localStorage.setItem('rover_pat', document.getElementById('cfg-pat').value);
+            localStorage.setItem('rover_base', document.getElementById('cfg-base').value);
+            localStorage.setItem('rover_table', document.getElementById('cfg-table').value);
+            hideConfig();
+            refreshAll();
+        }
+
+        // Airtable API
+        async function airtableFetch(table, params='') {
+            const cfg = getConfig();
+            if (!cfg.pat || !cfg.base) { showConfig(); return null; }
+            try {
+                const r = await fetch(`https://api.airtable.com/v0/${cfg.base}/${encodeURIComponent(table)}?${params}`, {
+                    headers: { 'Authorization': `Bearer ${cfg.pat}` }
+                });
+                if (!r.ok) throw new Error(`${r.status}`);
+                return await r.json();
+            } catch(e) {
+                console.error(`Airtable error (${table}):`, e);
+                return null;
+            }
+        }
+
+        async function fetchAllRecords(table) {
+            const cfg = getConfig();
+            if (!cfg.pat || !cfg.base) { showConfig(); return []; }
+            let all = [], offset = '';
+            do {
+                const params = offset ? `offset=${offset}` : '';
+                const data = await airtableFetch(table, params);
+                if (!data) break;
+                all = all.concat(data.records || []);
+                offset = data.offset || '';
+            } while (offset);
+            return all;
+        }
+
+        function tab(t) {
+            document.querySelectorAll('.tab-content').forEach(e=>e.classList.add('hidden'));
+            document.querySelectorAll('[id^="t-"]').forEach(e=>e.className='tab-off pb-2.5 text-xs font-medium');
+            document.getElementById('p-'+t)?.classList.remove('hidden');
+            document.getElementById('t-'+t).className='tab-on pb-2.5 text-xs font-medium';
+        }
+
+        function mkChart(id,type,data,opts={}) {
+            if(charts[id]) charts[id].destroy();
+            const ctx=document.getElementById(id);
+            if(!ctx) return;
+            charts[id]=new Chart(ctx,{type,data,options:{
+                responsive:true,maintainAspectRatio:false,
+                plugins:{legend:{display:opts.legend!==false,labels:{boxWidth:8,padding:8,font:{size:10}}}},
+                scales:type==='doughnut'||type==='pie'?{}:{
+                    x:{grid:{display:false},ticks:{maxTicksLimit:10,font:{size:9}}},
+                    y:{grid:{color:'rgba(255,255,255,0.02)'},beginAtZero:true,ticks:{font:{size:9}}}
+                },...opts
+            }});
+        }
+
+        function stat(label,value,icon,color,glow='') {
+            return `<div class="stat glass rounded-xl p-3.5 ${glow} cursor-default">
+                <div class="flex items-center gap-1.5 mb-1.5"><span class="text-sm">${icon}</span><span class="text-[9px] text-gray-500 uppercase tracking-wider">${label}</span></div>
+                <p class="text-xl font-bold ${color}">${value}</p>
+            </div>`;
+        }
+
+        function scoreBadge(s) {
+            s=s||0;const cn=s>=70?'emerald':s>=40?'amber':'red';
+            return `<div class="flex items-center gap-1.5"><span class="text-${cn}-400 font-semibold">${s}</span><div class="w-12 h-1 rounded-full bg-white/10"><div class="bar h-full rounded-full bg-${cn}-400" style="width:${s}%"></div></div></div>`;
+        }
+
+        function stageBadge(s) {
+            const colors={new:'blue',building:'cyan',strong:'emerald',dormant:'yellow',lost:'red'};
+            const c=colors[s]||'gray';
+            return `<span class="px-1.5 py-0.5 rounded text-[9px] bg-${c}-500/10 text-${c}-400">${s||'new'}</span>`;
+        }
+
+        async function loadAll() {
+            const cfg = getConfig();
+            if (!cfg.pat || !cfg.base) { showConfig(); return; }
+
+            // Fetch contacts
+            const records = await fetchAllRecords(cfg.table);
+            allContacts = records.map(r => {
+                const f = r.fields || {};
+                return {
+                    id: r.id,
+                    name: f.full_name || f.first_name || 'Unknown',
+                    title: f.title || '',
+                    company: f.company || '',
+                    email: f.email || '',
+                    phone: f.phone || '',
+                    classification: f.contact_type || 'unclassified',
+                    industry: f.industry || '',
+                    relationship_score: f.relationship_score || 0,
+                    relationship_stage: f.relationship_stage || 'new',
+                    interaction_count: f.interaction_count || 0,
+                    last_interaction: f.last_interaction_date || '',
+                    follow_up_date: f.follow_up_date || '',
+                    follow_up_reason: f.follow_up_reason || '',
+                    priority: f.priority || '',
+                    introduced_by: f.introduced_by || '',
+                    introduced_to: f.introduced_to || '',
+                    linkedin: f.contact_linkedin_url || '',
+                };
+            });
+
+            // Fetch intros
+            const introRecords = await fetchAllRecords('Introductions');
+            allIntros = introRecords.map(r => {
+                const f = r.fields || {};
+                return {
+                    connector: f.connector_name || '',
+                    target: f.target_name || '',
+                    reason: f.reason || '',
+                    status: f.status || 'suggested',
+                    date: f.requested_date || '',
+                    outcome: f.outcome || '',
+                };
+            });
+
+            renderHero();
+            renderNetwork();
+            renderContacts(allContacts);
+            renderIntros();
+        }
+
+        function renderHero() {
+            const total = allContacts.length;
+            const scores = allContacts.filter(c=>c.relationship_score).map(c=>c.relationship_score);
+            const avgScore = scores.length ? Math.round(scores.reduce((a,b)=>a+b,0)/scores.length) : 0;
+            const hasEmail = allContacts.filter(c=>c.email).length;
+            const emailRate = total ? Math.round(hasEmail/total*100) : 0;
+            const enriched = allContacts.filter(c=>c.industry||c.linkedin).length;
+            const enrichRate = total ? Math.round(enriched/total*100) : 0;
+            const active = allContacts.filter(c=>['building','strong'].includes(c.relationship_stage)).length;
+            const followups = allContacts.filter(c=>c.follow_up_date).length;
+            const industries = new Set();
+            allContacts.forEach(c => { if(c.industry) c.industry.split(',').forEach(i => industries.add(i.trim().toLowerCase())); });
+            const totalIntros = allIntros.length;
+
+            document.getElementById('hero').innerHTML = [
+                stat('Contacts',total,'👥','text-cyan-400','glow-c'),
+                stat('Avg Score',avgScore,'❤️','text-purple-400','glow-p'),
+                stat('Follow-ups',followups,'📅','text-amber-400','glow-a'),
+                stat('Intros',totalIntros,'🤝','text-teal-400','glow-t'),
+                stat('Enriched',enrichRate+'%','🔬','text-emerald-400'),
+                stat('Has Email',emailRate+'%','📧','text-sky-400'),
+                stat('Active',active,'🟢','text-green-400'),
+                stat('Industries',industries.size,'🏭','text-indigo-400'),
+            ].join('');
+        }
+
+        function renderNetwork() {
+            // Classifications
+            const cls = {};
+            allContacts.forEach(c => { const t=c.classification||'unclassified'; cls[t]=(cls[t]||0)+1; });
+            mkChart('ch-types','doughnut',{labels:Object.keys(cls),datasets:[{data:Object.values(cls),backgroundColor:PAL,borderWidth:0}]},{cutout:'60%'});
+
+            // Scores
+            const sd = {"0-20":0,"21-40":0,"41-60":0,"61-80":0,"81-100":0};
+            allContacts.forEach(c => {
+                const s=c.relationship_score||0;
+                if(s<=20)sd["0-20"]++;else if(s<=40)sd["21-40"]++;else if(s<=60)sd["41-60"]++;else if(s<=80)sd["61-80"]++;else sd["81-100"]++;
+            });
+            mkChart('ch-scores','bar',{labels:Object.keys(sd),datasets:[{label:'Contacts',data:Object.values(sd),backgroundColor:[C.red+'80',C.amber+'80',C.cyan+'80',C.teal+'80',C.emerald+'80'],borderRadius:4}]});
+
+            // Industries
+            const ind = {};
+            allContacts.forEach(c => { if(c.industry) c.industry.split(',').forEach(i => { i=i.trim(); if(i) ind[i]=(ind[i]||0)+1; }); });
+            const topInd = Object.entries(ind).sort((a,b)=>b[1]-a[1]).slice(0,8);
+            mkChart('ch-industries','bar',{labels:topInd.map(([k])=>k.length>14?k.slice(0,14)+'…':k),datasets:[{data:topInd.map(([,v])=>v),backgroundColor:PAL.map(c=>c+'80'),borderRadius:4}]},{indexAxis:'y'});
+
+            // Stages
+            const st = {};
+            allContacts.forEach(c => { const s=c.relationship_stage||'new'; st[s]=(st[s]||0)+1; });
+            const stColors = {new:C.blue+'80',building:C.cyan+'80',strong:C.emerald+'80',dormant:C.amber+'80',lost:C.red+'80'};
+            mkChart('ch-stages','doughnut',{labels:Object.keys(st),datasets:[{data:Object.values(st),backgroundColor:Object.keys(st).map(s=>stColors[s]||C.purple+'80'),borderWidth:0}]},{cutout:'60%'});
+
+            // Intelligence panel
+            const scores = allContacts.filter(c=>c.relationship_score).map(c=>c.relationship_score);
+            const avgScore = scores.length ? Math.round(scores.reduce((a,b)=>a+b,0)/scores.length) : 0;
+            const enriched = allContacts.filter(c=>c.industry||c.linkedin).length;
+            const enrichRate = allContacts.length ? Math.round(enriched/allContacts.length*100) : 0;
+            const emailRate = allContacts.length ? Math.round(allContacts.filter(c=>c.email).length/allContacts.length*100) : 0;
+            const active = allContacts.filter(c=>['building','strong'].includes(c.relationship_stage)).length;
+            const dormant = allContacts.filter(c=>['dormant','lost'].includes(c.relationship_stage)).length;
+            
+            document.getElementById('intel').innerHTML = `
+                <div class="flex justify-between py-2 border-b border-white/5"><span class="text-gray-400">Network Health</span><span class="font-semibold gradient-text">${avgScore}/100</span></div>
+                <div class="flex justify-between py-2 border-b border-white/5"><span class="text-gray-400">Enrichment Rate</span><span class="text-emerald-400 font-semibold">${enrichRate}%</span></div>
+                <div class="flex justify-between py-2 border-b border-white/5"><span class="text-gray-400">Email Coverage</span><span class="text-sky-400 font-semibold">${emailRate}%</span></div>
+                <div class="flex justify-between py-2 border-b border-white/5"><span class="text-gray-400">Active</span><span class="text-green-400 font-semibold">${active}</span></div>
+                <div class="flex justify-between py-2 border-b border-white/5"><span class="text-gray-400">Dormant/Lost</span><span class="text-red-400 font-semibold">${dormant}</span></div>
+                <div class="flex justify-between py-2"><span class="text-gray-400">Total Intros</span><span class="text-teal-400 font-semibold">${allIntros.length}</span></div>
+            `;
+        }
+
+        function renderContacts(contacts) {
+            document.getElementById('contacts-body').innerHTML = contacts.map(c => `
+                <tr class="row border-b border-white/[0.02] transition">
+                    <td class="py-2 px-2 text-white font-medium">${c.name}${c.linkedin?` <a href="${c.linkedin}" target="_blank" class="text-cyan-500/50 text-[9px]">↗</a>`:''}</td>
+                    <td class="py-2 px-2 text-gray-400">${c.title||'—'}</td>
+                    <td class="py-2 px-2 text-gray-400">${c.company||'—'}</td>
+                    <td class="py-2 px-2"><span class="px-1.5 py-0.5 rounded text-[9px] bg-white/5">${c.classification}</span></td>
+                    <td class="py-2 px-2">${scoreBadge(c.relationship_score)}</td>
+                    <td class="py-2 px-2">${stageBadge(c.relationship_stage)}</td>
+                    <td class="py-2 px-2 text-gray-400">${c.interaction_count||0}</td>
+                    <td class="py-2 px-2 text-gray-500 text-[10px]">${c.email?'✅':'—'}</td>
+                    <td class="py-2 px-2 text-gray-500 text-[10px]">${c.follow_up_date||'—'}</td>
+                </tr>
+            `).join('');
+        }
+
+        function filterContacts() {
+            const q = document.getElementById('contact-search').value.toLowerCase();
+            renderContacts(allContacts.filter(c =>
+                (c.name||'').toLowerCase().includes(q) ||
+                (c.company||'').toLowerCase().includes(q) ||
+                (c.industry||'').toLowerCase().includes(q) ||
+                (c.classification||'').toLowerCase().includes(q)
+            ));
+        }
+
+        function renderIntros() {
+            // Status chart
+            const sc = {};
+            allIntros.forEach(i => { sc[i.status] = (sc[i.status]||0)+1; });
+            if (Object.keys(sc).length) {
+                const sColors = {suggested:C.blue+'80',requested:C.amber+'80',made:C.emerald+'80',declined:C.red+'80'};
+                mkChart('ch-intro-status','doughnut',{labels:Object.keys(sc),datasets:[{data:Object.values(sc),backgroundColor:Object.keys(sc).map(s=>sColors[s]||C.purple+'80'),borderWidth:0}]},{cutout:'60%'});
+            }
+
+            const el = document.getElementById('intros-list');
+            if (!allIntros.length) { el.innerHTML = '<p class="text-gray-600 text-xs">No introductions yet</p>'; return; }
+            el.innerHTML = allIntros.map(i => {
+                const emoji = {suggested:'💡',requested:'📨',made:'✅',declined:'❌'}[i.status]||'❓';
+                return `<div class="p-3 rounded-lg bg-white/[0.02] hover:bg-white/[0.04] transition">
+                    <div class="flex items-center gap-2"><span>${emoji}</span><span class="text-white text-xs font-medium">${i.connector}</span><span class="text-gray-500">→</span><span class="text-white text-xs font-medium">${i.target}</span><span class="ml-auto text-[9px] text-gray-600">${i.date}</span></div>
+                    ${i.reason?`<p class="text-[10px] text-gray-500 mt-1 ml-6">${i.reason}</p>`:''}
+                </div>`;
+            }).join('');
+        }
+
+        async function refreshAll() {
+            document.getElementById('status').textContent = 'Loading...';
+            await loadAll();
+            document.getElementById('status').textContent = `Updated ${new Date().toLocaleTimeString()}`;
+        }
+
+        // Init
+        const cfg = getConfig();
+        if (!cfg.pat || !cfg.base) showConfig();
+        else refreshAll();
+        setInterval(refreshAll, 60000);
+    </script>
+</body>
+</html>
