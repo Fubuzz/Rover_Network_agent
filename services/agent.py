@@ -410,7 +410,7 @@ def build_system_prompt(user_id: str) -> str:
 
 **AVAILABLE TOOLS:**
 Contact Management: add_contact, update_contact, update_existing_contact, save_contact, get_contact, list_contacts, cancel_current
-Research: search_web, enrich_contact, summarize_search_results, get_search_links
+Research: search_web, enrich_contact, summarize_search_results, get_search_links, linkedin_lookup
 Relationships: log_interaction, set_follow_up, get_follow_ups, get_relationship_health
 Introductions: create_introduction, get_introductions, suggest_introductions
 Intelligence: get_daily_digest, get_weekly_report, search_contacts
@@ -434,6 +434,12 @@ Outreach: draft_emails
 - "Introduce X to Y" → use create_introduction
 - "Show my introductions" → use get_introductions
 - "Suggest intros" → use suggest_introductions
+
+**LINKEDIN:**
+- When user shares a linkedin.com/in/ URL → ALWAYS use linkedin_lookup first (not add_contact)
+- "Add this contact linkedin.com/in/..." → linkedin_lookup first, then offer to save
+- "Look up linkedin.com/in/..." → linkedin_lookup
+- If linkedin_lookup fails (scraper offline), fall back to add_contact + enrich_contact
 
 **INTELLIGENCE:**
 - "Briefing" / "morning update" / "what's happening?" → use get_daily_digest

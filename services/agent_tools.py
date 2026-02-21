@@ -1754,7 +1754,41 @@ Provide a brief, informative summary suitable for a contact profile."""
         result = await deep_enrich_from_linkedin("lookup", url)
         
         if not result:
-            return "🔌 LinkedIn scraper isn't running right now. Start it on your Mac with:\n`python scraper.py --serve`"
+            # Fallback: extract name from URL slug and do targeted Tavily search
+            logger.info("[TOOL] Scraper offline, falling back to targeted Tavily lookup")
+            try:
+                import re
+                slug = url.split("/in/")[-1].split("?")[0].rstrip("/")
+                name_from_slug = re.sub(r'-[a-f0-9]{6,}$', '', slug).replace("-", " ").title()
+                
+                from services.auto_enrichment import _search_person
+                search_results = await _search_person(name_from_slug, linkedin_url=url)
+                
+                if search_results:
+                    import openai
+                    client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+                    search_text = "\n".join([
+                        f"- {r.get('title', '')}: {r.get('content', '')[:300]}"
+                        for r in search_results[:5]
+                    ])
+                    
+                    response = client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {"role": "system", "content": f"Based on these search results about {name_from_slug} (LinkedIn: {url}), write a concise professional profile. Include: current role, company, location, skills, and background. Only include info about THIS specific person — ignore anyone else with a similar name. Be concise."},
+                            {"role": "user", "content": search_text}
+                        ],
+                        temperature=0,
+                        max_tokens=500
+                    )
+                    
+                    profile_text = response.choices[0].message.content.strip()
+                    return f"🔍 **{name_from_slug}**\n🔗 {url}\n\n{profile_text}\n\nWant me to save them as a contact?"
+                    
+            except Exception as e:
+                logger.warning(f"[TOOL] Tavily fallback failed: {e}")
+            
+            return f"Couldn't pull data for that profile right now. Want me to just add them with the LinkedIn URL?"
         
         raw = result.get("_raw_linkedin", {})
         summary = result.get("_linkedin_summary", "")

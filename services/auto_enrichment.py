@@ -126,9 +126,9 @@ async def auto_enrich_contact(name: str, company: str = None, linkedin_url: str 
     
     client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     
-    # Step 1: Web search via Tavily
+    # Step 1: Web search via Tavily (use LinkedIn URL as anchor if available)
     discovered = {}
-    search_results = await _search_person(name, company)
+    search_results = await _search_person(name, company, linkedin_url=linkedin_url)
     
     if not search_results:
         logger.info(f"[AUTO-ENRICH] No search results for {name}")
@@ -157,7 +157,7 @@ async def auto_enrich_contact(name: str, company: str = None, linkedin_url: str 
     "location": "city, country"
 }
 Return ONLY valid JSON, nothing else."""},
-                {"role": "user", "content": f"Person: {name}\nCompany: {company or 'Unknown'}\n\nSearch results:\n{search_text}"}
+                {"role": "user", "content": f"Person: {name}\nCompany: {company or 'Unknown'}\nLinkedIn: {linkedin_url or 'Unknown'}\n\nIMPORTANT: Only extract info about THIS specific person. If search results mention other people with similar names, ignore them.\n\nSearch results:\n{search_text}"}
             ],
             temperature=0,
             max_tokens=500
@@ -247,8 +247,12 @@ Return ONLY valid JSON, nothing else."""},
     return discovered
 
 
-async def _search_person(name: str, company: str = None) -> list:
-    """Search for a person using Tavily API."""
+async def _search_person(name: str, company: str = None, linkedin_url: str = None) -> list:
+    """Search for a person using Tavily API.
+    
+    When a LinkedIn URL is available, searches for that specific profile
+    to avoid matching wrong people with similar names.
+    """
     tavily_key = os.getenv("TAVILY_API_KEY", "")
     
     if not tavily_key:
@@ -259,13 +263,59 @@ async def _search_person(name: str, company: str = None) -> list:
         from tavily import TavilyClient
         client = TavilyClient(api_key=tavily_key)
         
-        query = f"{name}"
-        if company:
-            query += f" {company}"
-        query += " LinkedIn professional"
+        results = []
         
-        result = client.search(query=query, max_results=5, search_depth="basic")
-        return result.get("results", [])
+        # Strategy 1: If we have a LinkedIn URL, search for it directly
+        if linkedin_url:
+            # Clean the URL (remove tracking params)
+            clean_url = linkedin_url.split("?")[0].rstrip("/")
+            
+            # Extract the slug for a targeted search
+            slug = ""
+            if "/in/" in clean_url:
+                slug = clean_url.split("/in/")[-1].replace("-", " ")
+                # Remove the ID suffix (e.g. "8aa36b107")
+                import re
+                slug = re.sub(r'\b[a-f0-9]{6,}\b', '', slug).strip()
+            
+            # Search with LinkedIn URL directly — most accurate
+            try:
+                result = client.search(
+                    query=f"site:linkedin.com {clean_url} {name}",
+                    max_results=3,
+                    search_depth="basic",
+                    include_domains=["linkedin.com"]
+                )
+                results.extend(result.get("results", []))
+                logger.info(f"[AUTO-ENRICH] LinkedIn-targeted search got {len(results)} results")
+            except Exception as e:
+                logger.debug(f"[AUTO-ENRICH] LinkedIn-targeted search failed: {e}")
+            
+            # Also do a general search with the name for company/industry context
+            try:
+                general_query = f'"{name}"'
+                if company:
+                    general_query += f" {company}"
+                elif slug:
+                    general_query += f" {slug}"
+                general_query += " professional"
+                
+                result = client.search(query=general_query, max_results=3, search_depth="basic")
+                results.extend(result.get("results", []))
+            except Exception as e:
+                logger.debug(f"[AUTO-ENRICH] General search failed: {e}")
+        else:
+            # No LinkedIn URL — original behavior
+            query = f"{name}"
+            if company:
+                query += f" {company}"
+            query += " LinkedIn professional"
+            
+            result = client.search(query=query, max_results=5, search_depth="basic")
+            results = result.get("results", [])
+        
+        logger.info(f"[AUTO-ENRICH] Total search results for {name}: {len(results)}")
+        return results
         
     except Exception as e:
         logger.error(f"[AUTO-ENRICH] Tavily search error: {e}")
