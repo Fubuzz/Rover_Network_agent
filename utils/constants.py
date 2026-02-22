@@ -99,9 +99,9 @@ Type /help if you need me to spell it out for you. 😉
 
 **Relationships & Follow-ups**
 /remind <name> <date> — set a follow-up reminder
-/followups — see pending follow-ups
-/digest — daily network briefing
-/health <name> — relationship score
+"my follow-ups" — see pending follow-ups
+"daily digest" — daily network briefing
+"health <name>" — relationship score
 
 **Outreach**
 /draft <query> <purpose> — draft personalized emails

@@ -286,10 +286,13 @@ class AgentTools:
             return f"'{existing.name}' already exists. Say 'update {existing.name}' to modify."
 
         if email:
-            sheets = get_sheets_service()
-            email_match = sheets.find_contact_by_email(email)
-            if email_match:
-                return f"Email {email} already belongs to '{email_match.name}'."
+            try:
+                sheets = get_sheets_service()
+                email_match = sheets.find_contact_by_email(email)
+                if email_match:
+                    return f"Email {email} already belongs to '{email_match.name}'."
+            except Exception as e:
+                logger.warning(f"[TOOL] Email dedup check failed (continuing): {e}")
 
         # Create new draft in session
         draft = self.session.start_new_contact(name)

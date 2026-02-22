@@ -1304,7 +1304,7 @@ class AirtableService:
         self._ensure_initialized()
 
         try:
-            formula = f"{{match_id}} = '{match_id}'"
+            formula = f"{{match_id}} = '{_escape_airtable_value(match_id)}'"
             records = self.matches_table.all(formula=formula)
 
             if records:

@@ -953,6 +953,7 @@ async def handle_search(user_id: str, result: ConversationResult, original_messa
             query = person_name or company_name or search_query
             results = enrichment._search(query, 5)
             if results:
+                store_search_results(user_id, query, results[:3])
                 response = f"🔍 Results for **{query}**:\n\n"
                 for i, r in enumerate(results[:3], 1):
                     response += f"**{i}.** {r.get('title', '')}\n"

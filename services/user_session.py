@@ -85,6 +85,8 @@ class ContactDraft(BaseModel):
         # Phone validation - basic cleanup
         if field == "phone":
             value = self._clean_phone(value)
+            if not value:
+                return False
 
         setattr(self, field, value)
         self.last_updated = datetime.now()
