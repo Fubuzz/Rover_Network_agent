@@ -33,7 +33,10 @@
       "Bash(gh repo edit:*)",
       "Bash(git push:*)",
       "Bash(git pull:*)",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Bash(lsof:*)",
+      "Bash(ps:*)",
+      "Bash(python -m pytest:*)"
     ]
   }
 }
