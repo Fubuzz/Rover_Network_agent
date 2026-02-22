@@ -161,6 +161,81 @@ def generate_outreach_email(
 
 
 # ---------------------------------------------------------------------------
+# 2b. GPT-based fallback filter (when Airtable formula misses)
+# ---------------------------------------------------------------------------
+
+def _llm_filter_contacts(sheets, contacts_query: str) -> list:
+    """
+    Use GPT to pick matching contacts from the full list.
+    This handles fuzzy cases where the Airtable formula filter misses
+    (e.g. address='Cairo' doesn't match query 'Egypt').
+    """
+    all_contacts = sheets.get_all_contacts()
+    if not all_contacts:
+        return []
+
+    # Build compact summaries for the LLM
+    summaries = []
+    for c in all_contacts:
+        parts = [c.name or "Unknown"]
+        if c.title:
+            parts.append(c.title)
+        if c.company:
+            parts.append(f"at {c.company}")
+        if c.contact_type:
+            parts.append(f"[{c.contact_type}]")
+        if c.industry:
+            parts.append(f"({c.industry})")
+        if c.address:
+            parts.append(f"in {c.address}")
+        if c.email:
+            parts.append(f"<{c.email}>")
+        summaries.append(" | ".join(parts))
+
+    client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+    try:
+        resp = client.chat.completions.create(
+            model=AIConfig.OPENAI_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Return matching contact names as a JSON array. "
+                        "Only include contacts that genuinely match the query. "
+                        "Return ONLY valid JSON, no markdown."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Contacts:\n{chr(10).join(summaries)}\n\n"
+                        f"Query: {contacts_query}\n\n"
+                        "Return matching names as JSON array:"
+                    ),
+                },
+            ],
+            temperature=0,
+            max_tokens=500,
+        )
+        raw = (resp.choices[0].message.content or "").strip()
+        if "```" in raw:
+            raw = raw.split("```")[1].replace("json", "").strip()
+        names = json.loads(raw)
+
+        matched = []
+        for name in names:
+            contact = sheets.get_contact_by_name(name)
+            if contact:
+                matched.append(contact)
+        return matched
+
+    except Exception as e:
+        logger.warning(f"[OUTREACH] LLM filter fallback failed: {e}")
+        return []
+
+
+# ---------------------------------------------------------------------------
 # 3. Main orchestrator: parse → filter → generate → save drafts
 # ---------------------------------------------------------------------------
 
@@ -210,11 +285,13 @@ def create_outreach_drafts(
     tone = parsed.get("tone", "warm")
 
     # --- Step 2: Filter contacts ---
+    contacts = []
     if criteria:
         contacts = sheets.filter_contacts(criteria)
-    else:
-        # No filter criteria extracted — fall back to LLM-based search
-        contacts = sheets.get_all_contacts()
+
+    # Fallback: if formula filter found nothing, use GPT to match from full list
+    if not contacts:
+        contacts = _llm_filter_contacts(sheets, contacts_query)
 
     if not contacts:
         return 0, f"No contacts found matching: {contacts_query}", []
