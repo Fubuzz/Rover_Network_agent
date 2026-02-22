@@ -104,6 +104,7 @@ class TestContactMissingFields:
     def test_all_missing(self):
         c = Contact(full_name="Test")
         missing = contact_missing_fields(c)
+        assert "title" in missing
         assert "email" in missing
         assert "phone" in missing
         assert "LinkedIn" in missing
@@ -112,6 +113,7 @@ class TestContactMissingFields:
     def test_none_missing(self):
         c = Contact(
             full_name="Test",
+            title="Engineer",
             email="a@b.com",
             phone="+15551234567",
             linkedin_url="https://linkedin.com/in/test",

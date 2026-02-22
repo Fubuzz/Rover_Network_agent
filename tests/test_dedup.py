@@ -43,7 +43,7 @@ class TestEarlyDuplicateDetection:
             tools.memory = mock_svc
 
             result = await tools.add_contact(name="Jane Doe")
-            assert "already exists" in result
+            assert "already in your network" in result
 
     @pytest.mark.asyncio
     async def test_rejects_existing_email(self):

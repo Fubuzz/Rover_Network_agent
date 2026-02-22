@@ -280,12 +280,12 @@ class AgentTools:
         if self.memory.is_collecting(self.user_id):
             pending = self.memory.get_pending_contact(self.user_id)
             if pending:
-                return f"Already editing {pending.name}. Say 'save' to save first, or 'cancel' to discard."
+                return f"Still working on {pending.name}. Say 'save' to keep them, or 'cancel' to start fresh."
 
         # Early duplicate detection
         existing = find_contact_in_storage(name)
         if existing:
-            return f"'{existing.name}' already exists. Say 'update {existing.name}' to modify."
+            return f"{existing.name} is already in your network. Want to update their info?"
 
         if email:
             try:
@@ -303,11 +303,14 @@ class AgentTools:
             'company_description': company_description, 'address': location,
         }
         cleaned = {}
+        echo_parts = []
         for field_name, value in field_values.items():
             if value:
                 cleaned_val, is_valid, err = validate_and_clean_field(field_name, value)
                 if is_valid and cleaned_val:
                     cleaned[field_name] = cleaned_val
+                    if field_name in ('phone', 'email') and str(cleaned_val) != str(value):
+                        echo_parts.append(f"{field_name}: {cleaned_val}")
 
         # Split name
         name_parts = name.split()
@@ -345,8 +348,11 @@ class AgentTools:
         if contact_type:
             details.append(f"Type: {contact_type}")
 
-        detail_str = f" ({', '.join(details)})" if details else ""
-        response = f"Started new contact: {name}{detail_str}. Add more info or say 'done' to save."
+        response = f"{name} started"
+        if details:
+            response += f" — {', '.join(details)}"
+        if echo_parts:
+            response += f"\nParsed as: {', '.join(echo_parts)}"
 
         missing = contact_missing_fields(contact)
         if missing:
@@ -367,7 +373,7 @@ class AgentTools:
         pending = self.memory.get_pending_contact(self.user_id)
 
         if not pending:
-            return "No contact being edited. Start with 'Add [name]' first."
+            return "Not editing anyone right now. Say 'add [name]' to start."
 
         target_name = pending.name
 
@@ -378,36 +384,48 @@ class AgentTools:
             'company_description': company_description, 'address': location,
         }
         updates = {}
+        echo_parts = []
         for field_name, value in raw_updates.items():
             if value:
                 cleaned_val, is_valid, err = validate_and_clean_field(field_name, value)
                 if is_valid and cleaned_val:
                     updates[field_name] = cleaned_val
+                    if field_name in ('phone', 'email') and str(cleaned_val) != str(value):
+                        FIELD_LABELS_ECHO = {'phone': 'phone', 'email': 'email'}
+                        echo_parts.append(f"{FIELD_LABELS_ECHO.get(field_name, field_name)}: {cleaned_val}")
 
         if notes:
             updates['notes'] = notes
 
         if not updates:
-            return f"No updates provided for {target_name}."
+            return f"Didn't catch any new info for {target_name}. Try 'title is CEO' or 'email is x@y.com'."
 
         # Update via memory only
         self.memory.update_pending(self.user_id, updates)
 
-        # Format response
-        update_parts = [f"{k}='{v}'" for k, v in updates.items()]
+        # Format response with human-readable labels
+        FIELD_LABELS = {
+            'title': 'title', 'company': 'company', 'email': 'email',
+            'phone': 'phone', 'linkedin_url': 'LinkedIn', 'contact_type': 'type',
+            'company_description': 'company info', 'address': 'location', 'notes': 'notes',
+        }
+        update_parts = [f"{FIELD_LABELS.get(k, k)}: {v}" for k, v in updates.items()]
         logger.info(f"[TOOL] update_contact: {target_name} -> {update_parts}")
 
-        # Check if contact looks complete enough to suggest saving
-        updated_pending = self.memory.get_pending_contact(self.user_id)
-        if updated_pending:
-            missing = contact_missing_fields(updated_pending)
-            if len(missing) == 0:
-                return MessageResponse(
-                    text=f"Updated {target_name}: {', '.join(update_parts)}\n\nLooking good! All key fields filled.",
-                    buttons=[[("Save Now", "save"), ("Keep Editing", "dismiss")]]
-                )
+        # Echo cleaned values if they differ from raw input
+        echo_str = f"\nParsed as: {', '.join(echo_parts)}" if echo_parts else ""
 
-        return f"Updated {target_name}: {', '.join(update_parts)}"
+        # Always show checklist
+        updated_pending = self.memory.get_pending_contact(self.user_id)
+        missing = contact_missing_fields(updated_pending) if updated_pending else []
+        missing_str = f"\nStill need: {', '.join(missing)}" if missing else ""
+
+        if len(missing) == 0:
+            return MessageResponse(
+                text=f"Updated {target_name} — {', '.join(update_parts)}{echo_str}{missing_str}\n\nAll key fields filled!",
+                buttons=[[("Save Now", "save"), ("Keep Editing", "dismiss")]]
+            )
+        return f"Updated {target_name} — {', '.join(update_parts)}{echo_str}{missing_str}"
 
     async def save_contact(self) -> str:
         """
@@ -478,7 +496,7 @@ class AgentTools:
                     logger.warning(f"[TOOL] Auto-enrichment trigger failed: {e}")
             
             return MessageResponse(
-                text=f"Saved {saved_name} to your network! ✅ Enriching in background...\n\n{format_contact_card(saved_contact)}",
+                text=f"{saved_name} saved ✅\n\n{format_contact_card(saved_contact)}",
                 buttons=[[("Enrich", f"enrich:{saved_name}"), ("Add Another", "add_new")]]
             )
 
@@ -666,9 +684,9 @@ Provide a brief, informative summary suitable for a contact profile."""
         # Suggest similar contacts
         suggestions = get_similar_contacts(name)
         if suggestions:
-            return f"Contact '{name}' not found. Did you mean: {', '.join(suggestions)}?"
+            return f"Can't find {name}. Did you mean {', '.join(suggestions)}?"
 
-        return f"Contact '{name}' not found in your network. Would you like to add them?"
+        return f"No one named {name} in your network yet. Want to add them?"
 
     async def cancel_current(self) -> str:
         """Cancel the current contact without saving."""
@@ -681,7 +699,7 @@ Provide a brief, informative summary suitable for a contact profile."""
         self.memory.cancel_pending(self.user_id)
 
         logger.info(f"[TOOL] cancel_current: Cancelled {name}")
-        return f"Cancelled {name}. Ready for a new contact."
+        return f"Dropped {name}. Ready whenever you are."
 
     async def get_last_summary(self) -> str:
         """Get the last generated summary (for adding to descriptions)."""
@@ -700,7 +718,7 @@ Provide a brief, informative summary suitable for a contact profile."""
         # Find the contact in storage
         contact = find_contact_in_storage(name)
         if not contact:
-            return f"Contact '{name}' not found in your network. Try 'Add {name}' to create them first."
+            return f"Can't find {name}. Say 'add {name}' to create them."
 
         # Build updates dict
         updates = {}
@@ -730,9 +748,14 @@ Provide a brief, informative summary suitable for a contact profile."""
         success = update_contact_in_storage(name, updates)
 
         if success:
-            update_parts = [f"{k}='{v}'" for k, v in updates.items()]
+            FIELD_LABELS = {
+                'title': 'title', 'company': 'company', 'email': 'email',
+                'phone': 'phone', 'linkedin_url': 'LinkedIn', 'contact_type': 'type',
+                'company_description': 'company info', 'address': 'location', 'notes': 'notes',
+            }
+            update_parts = [f"{FIELD_LABELS.get(k, k)}: {v}" for k, v in updates.items()]
             logger.info(f"[TOOL] update_existing_contact: Updated {name} -> {update_parts}")
-            return f"Updated {name}: {', '.join(update_parts)}"
+            return f"Updated {name} — {', '.join(update_parts)} | Say 'show {name}' to view"
 
         return f"Failed to update {name}. Please try again."
 
@@ -837,17 +860,42 @@ Provide a brief, informative summary suitable for a contact profile."""
 
             logger.info(f"[TOOL] enrich_contact: Stored {len(fields_updated)} fields in memory: {fields_updated}")
 
-        # Build comprehensive response
-        response = f"**🔍 Deep Research Complete for {target_name}**\n\n"
+        # Build confidence-split field lists
+        FIELD_LABELS = {
+            'title': 'title', 'company': 'company', 'email': 'email',
+            'phone': 'phone', 'linkedin_url': 'LinkedIn', 'contact_type': 'type',
+            'company_description': 'company info', 'address': 'location', 'notes': 'notes',
+            'industry': 'industry',
+        }
+        confirmed_fields = []
+        likely_fields = []
+        for field_name, sourced_val in result.field_mappings.items():
+            if not sourced_val or not sourced_val.value:
+                continue
+            label = FIELD_LABELS.get(field_name, field_name)
+            if sourced_val.confidence == ConfidenceLevel.HIGH:
+                confirmed_fields.append(f"{label}: {sourced_val.value}")
+            else:
+                likely_fields.append(f"{label}: {sourced_val.value}")
 
-        # Quality indicators
-        response += f"**Research Quality:** {result.overall_confidence.value.upper()}\n"
-        response += f"**Completeness:** {result.completeness_score:.0%}\n"
-        response += f"**Sources Consulted:** {result.sources_consulted}\n\n"
+        # Build comprehensive response
+        response = f"Research complete for {target_name}\n\n"
+
+        if result.overall_confidence == ConfidenceLevel.HIGH:
+            response += "Strong matches from multiple sources\n"
+        elif result.overall_confidence == ConfidenceLevel.MEDIUM:
+            response += "Reasonable matches — worth a quick review\n"
+        else:
+            response += "Limited data found — please verify\n"
+
+        if confirmed_fields:
+            response += f"\n**Confirmed:** {', '.join(confirmed_fields)}\n"
+        if likely_fields:
+            response += f"\n**Likely (please verify):** {', '.join(likely_fields)}\n"
 
         # Person findings
         if result.person:
-            response += "**👤 Person Information:**\n"
+            response += "\n**👤 Person:**\n"
             if result.person.current_title:
                 response += f"- Title: {result.person.current_title}\n"
             if result.person.current_company:
@@ -856,8 +904,6 @@ Provide a brief, informative summary suitable for a contact profile."""
                 response += f"- Location: {result.person.location}\n"
             if result.person.contact_type:
                 response += f"- Type: {result.person.contact_type}\n"
-            if result.person.seniority:
-                response += f"- Seniority: {result.person.seniority}\n"
 
         # LinkedIn
         if result.linkedin_profile and result.linkedin_profile.profile_url:
@@ -887,12 +933,6 @@ Provide a brief, informative summary suitable for a contact profile."""
             response += f"\n**⚠️ Notes:**\n"
             for w in result.warnings:
                 response += f"- {w}\n"
-
-        # Accuracy indicators
-        if result.accuracy_indicators:
-            response += f"\n**✅ Verified:**\n"
-            for a in result.accuracy_indicators:
-                response += f"- {a}\n"
 
         # Show current contact state
         if pending:

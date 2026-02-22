@@ -244,13 +244,10 @@ async def handle_add_contact(user_id: str, result: ConversationResult) -> str:
             new_name = result.entities.get('name', '').lower()
             if not new_name or new_name in pending.name.lower():
                 return await handle_update_contact(user_id, result)
-            # Different name - ask for clarification
-            return (
-                f"Hold on! I'm still working on **{pending.name}**. 🤔\n\n"
-                f"Want to:\n"
-                f"• Say _'done'_ to save {pending.name} first\n"
-                f"• Say _'cancel'_ to discard and start fresh\n"
-                f"• Or keep adding info about {pending.name}"
+            # Different name - single clarification, no bullet menu
+            return MessageResponse(
+                text=f"Still working on {pending.name}. Save them first?",
+                buttons=[[("Save", "save"), ("Cancel", "cancel")]]
             )
 
     # Get name from entities
@@ -330,10 +327,12 @@ async def handle_add_contact(user_id: str, result: ConversationResult) -> str:
     if details:
         response += "\n" + " | ".join(details)
 
-    # Prompt for more
-    missing = get_missing_fields_hint(contact)
-    response += f"\n\nTell me more about **{name}**! {missing}"
-    response += "\n\n_Say 'done' to save, or 'cancel' to discard._ 💅"
+    # Prompt for more with checklist
+    from utils.formatters import contact_missing_fields
+    missing = contact_missing_fields(contact)
+    if missing:
+        response += f"\n\nStill need: {', '.join(missing)}"
+    response += "\n\nShare details or say _'done'_ to save."
 
     return response
 
@@ -373,13 +372,7 @@ async def handle_update_contact(user_id: str, result: ConversationResult) -> str
                 context_switched = True
             else:
                 # Target not found - ask user what they want
-                return (
-                    f"I don't have **{target_name}** in my records yet. 🤔\n\n"
-                    f"I'm currently working on **{pending.name}**.\n\n"
-                    f"Would you like to:\n"
-                    f"• Add **{target_name}** as a new contact? (say _'add {target_name}'_)\n"
-                    f"• Continue with **{pending.name}**? (just tell me more about them)"
-                )
+                return f"Don't have {target_name} yet. Want me to add them, or keep going with {pending.name}?"
 
     # If no context switch happened, use pending contact
     if not contact and pending:
@@ -478,9 +471,12 @@ async def handle_update_contact(user_id: str, result: ConversationResult) -> str
 
     response += " | ".join(update_parts) if update_parts else "Updated!"
 
-    # Add missing fields hint and prompt
-    missing = get_missing_fields_hint(contact) if contact else ""
-    response += f"\n\n{random_prompt()} {missing}"
+    # Add structured checklist ending
+    from utils.formatters import contact_missing_fields as _cmf
+    missing_fields = _cmf(contact) if contact else []
+    missing_str = f"Still need: {', '.join(missing_fields)}" if missing_fields else "All key fields filled!"
+    response += f"\n\n{missing_str}"
+    response += "\nKeep going or say _'done'_ to save."
 
     return response
 

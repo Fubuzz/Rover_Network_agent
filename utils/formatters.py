@@ -377,6 +377,8 @@ def contact_draft_card(contact: "Contact") -> str:
 def contact_missing_fields(contact: "Contact") -> list:
     """Get list of empty important fields on a Contact."""
     missing = []
+    if not contact.title:
+        missing.append("title")
     if not contact.email:
         missing.append("email")
     if not contact.phone:
