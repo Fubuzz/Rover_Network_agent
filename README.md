@@ -4,13 +4,13 @@
 
 A comprehensive Telegram bot powered by CrewAI for managing and nurturing your professional network. Stores contacts in Google Sheets, enriches data through web searches, matches Founders with Investors, and generates personalized outreach emails.
 
-**Version 2.2.0** | [Changelog](CHANGELOG.md)
+**Version 2.3.0** | [Changelog](CHANGELOG.md)
 
-### What's New in 2.2.0
-- ✅ **Bulk Contact Import** - Upload CSV or Excel files to import contacts
-- ✅ **Auto header detection** - Flexible column name mapping
-- ✅ **Smart duplicate handling** - Updates existing contacts with new data
-- ✅ **Import summary** - Shows added, updated, skipped, and failed counts
+### What's New in 2.3.0
+- ✅ **Targeted Outreach** — `/outreach Email investors in Egypt about a meeting March 5-12`
+- ✅ **NL-driven email drafting** — Filters contacts, generates personalized emails, saves to Airtable
+- ✅ **Approval pipeline** — Drafts saved as PENDING, review in Airtable, `/send_approved` to send
+- ✅ **Multi-criteria filtering** — Filter contacts by type, industry, location via Airtable formulas
 
 ## Features
 
@@ -141,9 +141,11 @@ python main.py
 | `/match` | Run matchmaker to pair Founders with Investors |
 | `/matches` | View all saved matches |
 | `/clear_matches` | Clear all matches |
-| `/draft` | Generate email drafts for high-quality matches |
+| `/draft` | Generate email drafts from high-quality matches |
+| `/outreach <request>` | Direct outreach — natural language email drafting (saved to Airtable) |
 | `/drafts` | View all pending drafts |
-| `/send` | Send approved email drafts |
+| `/send_approved` | Send approved email drafts |
+| `/clear_drafts` | Clear all drafts |
 
 ### Organization
 | Command | Description |

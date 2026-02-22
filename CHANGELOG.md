@@ -1,5 +1,63 @@
 # Changelog - Rover Network Agent
 
+## Version 2.3.0 - Targeted Outreach
+
+**Date:** 2026-02-22
+
+This update adds a direct outreach pipeline that lets you draft personalized emails to filtered contacts using natural language, with drafts saved to the existing Airtable approval workflow.
+
+---
+
+### New Features
+
+1. **`/outreach` Command**
+   - Natural language outreach: `/outreach Email all investors in Egypt about a meeting March 5-12`
+   - Parses NL into structured filter criteria (contact type, industry, location)
+   - Generates personalized emails per contact via GPT
+   - Saves drafts as PENDING in Airtable Drafts table
+   - Flows through existing APPROVED → `/send_approved` pipeline
+
+2. **Multi-Criteria Contact Filtering (`filter_contacts()`)**
+   - New `AirtableService.filter_contacts(criteria)` method
+   - Builds Airtable `AND(FIND(...))` formulas for server-side filtering
+   - Field alias support: `type` → `contact_type`, `location` → `address`, etc.
+   - Client-side fallback if formula query fails
+
+3. **`draft_emails()` Agent Tool — Now Saves Drafts**
+   - Previously returned text-only email previews
+   - Now creates Draft objects and saves to Airtable as PENDING
+   - Works through natural conversation: "Can you email my fintech investors about meeting next week?"
+
+### Files Added/Modified
+
+| File | Changes |
+|------|---------|
+| `services/outreach_direct.py` | NEW — parse NL, filter contacts, generate emails, save drafts |
+| `services/airtable_service.py` | Added `filter_contacts()` + `_client_side_filter()` methods |
+| `services/agent_tools.py` | Rewired `draft_emails()` to call outreach_direct and save drafts |
+| `handlers/outreach_handlers.py` | Added `/outreach` command handler |
+
+### Data Flow
+
+```
+User: "Email all investors in Egypt about meeting March 5-12"
+  │
+  ├─ Via /outreach command ─────────┐
+  └─ Via conversation (draft_emails)┤
+                                    ▼
+                      create_outreach_drafts()
+                        │
+                        ├─ parse_outreach_request() → structured criteria
+                        ├─ filter_contacts() → matching contacts
+                        ├─ generate_outreach_email() × N contacts
+                        └─ add_drafts_batch() → Airtable (PENDING)
+                                    │
+                                    ▼
+                      Review → APPROVED → /send_approved → SMTP
+```
+
+---
+
 ## Version 2.2.0 - Bulk Contact Import
 
 **Date:** 2026-01-15

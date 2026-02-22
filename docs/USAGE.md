@@ -265,6 +265,41 @@ Use `/ask` for natural language queries:
 /ask Show me contacts in San Francisco
 ```
 
+## Direct Outreach
+
+### `/outreach` Command
+
+Send personalized outreach emails to filtered contacts using natural language:
+
+```
+/outreach Email all investors in Egypt about a meeting March 5-12
+/outreach Reach out to fintech founders to introduce Synapse
+/outreach Send a warm email to my professional contacts about catching up
+```
+
+**How it works:**
+1. Your request is parsed into structured filter criteria (contact type, industry, location, etc.)
+2. Matching contacts are found in your network
+3. A personalized email is generated for each contact using GPT
+4. Drafts are saved to the Airtable Drafts table with status **PENDING**
+5. Review drafts in Airtable and set `approval_status` to **APPROVED**
+6. Run `/send_approved` to send the approved emails via SMTP
+
+**Via natural conversation:**
+
+You can also trigger outreach through the conversational agent:
+```
+"Can you email my fintech investors about meeting next week?"
+"Draft emails to all founders in Cairo about our product launch"
+```
+
+The agent will filter contacts, generate personalized emails, and save them as pending drafts — all through the same approval pipeline.
+
+**Notes:**
+- Contacts without an email address are skipped (reported in the summary)
+- Direct outreach drafts use `match_id = "DIRECT_OUTREACH"` to distinguish from match-based drafts
+- The existing `/draft` command (match-based) is unchanged
+
 ## Tips & Best Practices
 
 ### Adding Contacts

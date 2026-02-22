@@ -102,9 +102,9 @@ Rover is a modular, AI-powered network management agent built on CrewAI for agen
 │   │  enrichment.py         research_engine.py       classification.py  │   │
 │   │  auto_enrichment.py    ai_research_synthesizer   linkedin_scraper/ │   │
 │   │  matchmaker.py         introduction_service.py   outreach.py       │   │
-│   │  email_service.py      digest_service.py         transcription.py  │   │
-│   │  interaction_tracker   contact_memory.py         user_session.py   │   │
-│   │  conversation_store    bulk_import.py                              │   │
+│   │  outreach_direct.py    email_service.py          digest_service.py │   │
+│   │  transcription.py      interaction_tracker       contact_memory.py │   │
+│   │  user_session.py       conversation_store        bulk_import.py    │   │
 │   └────────────────────────────────────────────────────────────────────┘   │
 └──────────────────────────────────────────────────────────────────────────────┘
          │
@@ -172,6 +172,7 @@ Rover is a modular, AI-powered network management agent built on CrewAI for agen
        ├──→ /enrich → Enrichment Agent → Tavily/LinkedIn → Airtable
        ├──→ /match  → Matchmaker → GPT-4 scoring → Airtable (Matches)
        ├──→ /draft  → Outreach Service → GPT-4 → Airtable (Drafts)
+       ├──→ /outreach → outreach_direct → parse NL → filter → GPT-4 → Airtable (Drafts)
        ├──→ /send   → Email Service → SMTP → Gmail
        ├──→ /stats  → Reporting Agent → Airtable + SQLite
        ├──→ /view   → Contact Agent → Airtable → formatted card
@@ -264,7 +265,8 @@ The conversation engine (`handlers/conversation_engine.py`) is the central route
 | Classification | classification.py | Contact type assignment |
 | Matchmaker | matchmaker.py | Founder-investor pairing algorithm |
 | Introduction | introduction_service.py | Intro suggestions and tracking |
-| Outreach | outreach.py | Email draft generation |
+| Outreach | outreach.py | Match-based email draft generation |
+| Direct Outreach | outreach_direct.py | NL-driven targeted outreach (filter → generate → save) |
 | Email | email_service.py | SMTP sending |
 | Digest | digest_service.py | Daily/weekly briefings |
 | Interaction Tracker | interaction_tracker.py | Logs touchpoints, manages follow-ups |
