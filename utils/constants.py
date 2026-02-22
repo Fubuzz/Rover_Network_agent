@@ -104,7 +104,8 @@ Type /help if you need me to spell it out for you. 😉
 "health <name>" — relationship score
 
 **Outreach**
-/draft <query> <purpose> — draft personalized emails
+/draft — generate intro email drafts from matched contacts
+"email founders in fintech" — targeted outreach via natural language
 
 **Reports**
 /stats — network overview

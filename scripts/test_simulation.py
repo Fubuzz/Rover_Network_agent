@@ -49,7 +49,7 @@ def print_status(status: str, message: str):
     print(f"{icon} {message}")
 
 
-class TestSimulation:
+class Simulation:
     """Full workflow test simulation."""
 
     def __init__(self, cleanup: bool = False):
@@ -413,7 +413,7 @@ def main():
     # Also check env var
     cleanup = args.cleanup or os.getenv("CLEANUP", "").lower() in ("1", "true", "yes")
 
-    sim = TestSimulation(cleanup=cleanup)
+    sim = Simulation(cleanup=cleanup)
     success = sim.run()
 
     sys.exit(0 if success else 1)
