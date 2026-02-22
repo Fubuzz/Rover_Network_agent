@@ -704,6 +704,84 @@ class AirtableService:
         all_contacts = self.get_all_contacts()
         return [c for c in all_contacts if c.contact_type and c.contact_type.lower() == classification.lower()]
 
+    def filter_contacts(self, criteria: dict) -> List[Contact]:
+        """
+        Filter contacts by multiple criteria using Airtable formula.
+        Falls back to client-side filtering if the formula query fails.
+
+        Args:
+            criteria: Dict of field->value pairs, e.g.
+                {"contact_type": "investor", "industry": "fintech", "address": "egypt"}
+
+        Returns:
+            List of matching Contact objects.
+        """
+        if not criteria:
+            return self.get_all_contacts()
+
+        # Normalize field aliases to actual Airtable column names
+        alias_map = {
+            "type": "contact_type",
+            "classification": "contact_type",
+            "location": "address",
+            "country": "address",
+            "city": "address",
+            "region": "address",
+            "sector": "industry",
+            "firm": "company",
+            "organization": "company",
+        }
+        normalized = {}
+        for key, value in criteria.items():
+            col = alias_map.get(key.lower(), key.lower())
+            normalized[col] = str(value).lower().strip()
+
+        self._ensure_initialized()
+
+        # Try Airtable formula first
+        try:
+            parts = []
+            for col, val in normalized.items():
+                # Use FIND for substring match (case-insensitive via LOWER)
+                safe_val = val.replace("'", "\\'")
+                parts.append(f"FIND('{safe_val}', LOWER({{{col}}}))")
+
+            formula = f"AND({', '.join(parts)})" if len(parts) > 1 else parts[0]
+            records = self.contacts_table.all(formula=formula)
+
+            if records is not None:
+                contacts = []
+                for record in records:
+                    try:
+                        contact = self._airtable_record_to_contact(record)
+                        if contact.name and contact.name != "Unknown":
+                            contacts.append(contact)
+                    except Exception:
+                        continue
+                return contacts
+        except Exception as e:
+            print(f"[AIRTABLE] Formula filter failed ({e}), falling back to client-side")
+
+        # Client-side fallback
+        return self._client_side_filter(normalized)
+
+    def _client_side_filter(self, criteria: dict) -> List[Contact]:
+        """Filter contacts in-memory when Airtable formula fails."""
+        all_contacts = self.get_all_contacts()
+        results = []
+
+        for contact in all_contacts:
+            match = True
+            for col, val in criteria.items():
+                contact_val = getattr(contact, col, None) or ""
+                if val not in contact_val.lower():
+                    match = False
+                    break
+            if match:
+                results.append(contact)
+
+        return results
+
     def get_contact_stats(self) -> Dict[str, Any]:
         """Get statistics about contacts."""
         contacts = self.get_all_contacts()

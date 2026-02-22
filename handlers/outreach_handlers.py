@@ -169,6 +169,76 @@ async def clear_drafts_command(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text(f"Failed to clear drafts.\n\n{str(e)}")
 
 
+async def outreach_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handle /outreach command for direct, natural-language outreach.
+
+    Usage:
+        /outreach Email all investors in Egypt about a meeting March 5-12
+        /outreach Reach out to fintech founders to introduce Synapse
+    """
+    tracker = get_tracker()
+    user_id = str(update.effective_user.id)
+
+    tracker.start_operation(
+        operation_type=OperationType.GENERATE_REPORT.value,
+        user_id=user_id,
+        command="/outreach"
+    )
+
+    try:
+        # Get the full text after /outreach
+        raw_text = " ".join(context.args) if context.args else ""
+
+        if not raw_text.strip():
+            await update.message.reply_text(
+                "Usage: /outreach <your request in plain English>\n\n"
+                "Examples:\n"
+                "  /outreach Email all investors in Egypt about a meeting March 5-12\n"
+                "  /outreach Reach out to fintech founders to introduce myself\n"
+                "  /outreach Send a warm email to my professional contacts about catching up"
+            )
+            tracker.end_operation(success=True)
+            return
+
+        await update.message.reply_text(
+            f"Processing outreach request...\n\n\"{raw_text}\"\n\n"
+            "Filtering contacts, generating emails, and saving drafts."
+        )
+
+        from services.outreach_direct import create_outreach_drafts
+
+        count, summary, previews = create_outreach_drafts(
+            contacts_query=raw_text,
+            purpose=raw_text,
+        )
+
+        if count == 0:
+            await update.message.reply_text(f"No drafts created.\n\n{summary}")
+            tracker.end_operation(success=True)
+            return
+
+        # Build response with previews
+        report = f"OUTREACH COMPLETE\n\n{summary}\n\n"
+        for i, p in enumerate(previews[:5], 1):
+            report += (
+                f"{i}. To: {p['to']} ({p['email']})\n"
+                f"   Subject: {p['subject']}\n"
+                f"   {p['body_preview']}\n\n"
+            )
+        if len(previews) > 5:
+            report += f"...and {len(previews) - 5} more.\n\n"
+
+        report += "Review drafts in Airtable, set approval_status to APPROVED, then /send_approved."
+
+        await update.message.reply_text(report)
+        tracker.end_operation(success=True)
+
+    except Exception as e:
+        tracker.end_operation(success=False, error_message=str(e))
+        await update.message.reply_text(f"Outreach failed.\n\n{str(e)}")
+
+
 def get_outreach_handlers():
     """Get all outreach-related handlers."""
     return [
@@ -176,4 +246,5 @@ def get_outreach_handlers():
         CommandHandler("send_approved", send_approved_command),
         CommandHandler("drafts", drafts_command),
         CommandHandler("clear_drafts", clear_drafts_command),
+        CommandHandler("outreach", outreach_command),
     ]

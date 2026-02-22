@@ -1623,104 +1623,48 @@ Provide a brief, informative summary suitable for a contact profile."""
 
     async def draft_emails(self, contacts_query: str, purpose: str, date_range: str = None) -> str:
         """
-        Draft personalized outreach emails to multiple contacts.
-        
+        Draft personalized outreach emails and save them as PENDING drafts in Airtable.
+
         Args:
             contacts_query: Natural language description of who to email (e.g., "founders in Egypt", "all investors")
             purpose: Purpose of the email (e.g., "set up a meeting", "catch up", "introduce myself")
             date_range: Optional date range for meetings (e.g., "March 8-18")
         """
         logger.info(f"[TOOL] draft_emails: query='{contacts_query}', purpose='{purpose}', dates='{date_range}'")
-        
-        import openai, os, json
-        
-        # First, find matching contacts
-        sheets = get_sheets_service()
-        sheets._ensure_initialized()
-        all_contacts = sheets.get_all_contacts()
-        
-        if not all_contacts:
-            return "No contacts in your network yet."
-        
-        # Use LLM to filter contacts matching the query
-        contact_summaries = []
-        for c in all_contacts:
-            parts = [c.name or "Unknown"]
-            if c.title: parts.append(c.title)
-            if c.company: parts.append(f"at {c.company}")
-            if c.contact_type: parts.append(f"[{c.contact_type}]")
-            if c.industry: parts.append(f"({c.industry})")
-            if c.address: parts.append(f"in {c.address}")
-            if c.email: parts.append(f"<{c.email}>")
-            contact_summaries.append(" | ".join(parts))
-        
-        contacts_text = "\n".join(contact_summaries)
-        
-        client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        
+
         try:
-            # Step 1: Find matching contacts
-            filter_response = client.chat.completions.create(
-                model=AIConfig.OPENAI_MODEL,
-                messages=[
-                    {"role": "system", "content": "Return matching contact names as a JSON array. Only include contacts that genuinely match. Return ONLY valid JSON."},
-                    {"role": "user", "content": f"Contacts:\n{contacts_text}\n\nQuery: {contacts_query}\n\nReturn matching names as JSON array:"}
-                ],
-                temperature=0, max_tokens=500
+            from services.outreach_direct import create_outreach_drafts
+
+            count, summary, previews = create_outreach_drafts(
+                contacts_query=contacts_query,
+                purpose=purpose,
+                date_range=date_range,
             )
-            
-            result_text = filter_response.choices[0].message.content.strip()
-            if "```" in result_text:
-                result_text = result_text.split("```")[1].replace("json", "").strip()
-            matching_names = json.loads(result_text)
-            
-            if not matching_names:
-                return f"No contacts found matching '{contacts_query}'."
-            
-            # Step 2: Get full contact details for matches
-            matched_contacts = []
-            for name in matching_names:
-                contact = sheets.get_contact_by_name(name)
-                if contact:
-                    matched_contacts.append(contact)
-            
-            if not matched_contacts:
-                return f"No contacts found matching '{contacts_query}'."
-            
-            # Step 3: Draft emails for each
-            date_str = f" Available dates: {date_range}." if date_range else ""
-            
-            contact_details = []
-            for c in matched_contacts:
-                details = f"Name: {c.name}"
-                if c.title: details += f", Title: {c.title}"
-                if c.company: details += f", Company: {c.company}"
-                if c.industry: details += f", Industry: {c.industry}"
-                if c.email: details += f", Email: {c.email}"
-                contact_details.append(details)
-            
-            email_response = client.chat.completions.create(
-                model=AIConfig.OPENAI_MODEL,
-                messages=[
-                    {"role": "system", "content": f"You are Ahmed Abaza, founder of Synapse Analytics (AI credit decisioning for risk teams). Draft short, warm, professional emails. Keep each under 80 words. Be natural, not corporate. Sign off as Ahmed."},
-                    {"role": "user", "content": f"Draft personalized emails to each of these contacts.\nPurpose: {purpose}.{date_str}\n\nContacts:\n" + "\n".join(contact_details) + "\n\nDraft one email per contact, clearly labeled with their name."}
-                ],
-                temperature=0.7, max_tokens=1500
-            )
-            
-            emails_text = email_response.choices[0].message.content.strip()
-            
-            response = f"📧 **Draft emails for {len(matched_contacts)} contacts:**\n\n{emails_text}"
-            
-            # Note which ones don't have email addresses
-            no_email = [c.name for c in matched_contacts if not c.email]
-            if no_email:
-                response += f"\n\n⚠️ Missing email addresses: {', '.join(no_email)}"
-            
+
+            if count == 0:
+                return f"No drafts created.\n\n{summary}"
+
+            # Build user-facing response with previews
+            response = f"**{count} email draft(s) saved to Airtable (PENDING).**\n\n"
+            response += f"{summary}\n\n"
+
+            # Show first 5 previews
+            for i, p in enumerate(previews[:5], 1):
+                response += (
+                    f"**{i}. To: {p['to']}** ({p['email']})\n"
+                    f"   Subject: {p['subject']}\n"
+                    f"   {p['body_preview']}\n\n"
+                )
+            if len(previews) > 5:
+                response += f"_...and {len(previews) - 5} more._\n\n"
+
+            response += "Review in Airtable, set approval_status to APPROVED, then /send_approved."
             return response
-            
+
         except Exception as e:
             logger.error(f"Draft emails error: {e}")
+            import traceback
+            traceback.print_exc()
             return f"Error drafting emails: {str(e)}"
 
     # === PHASE 3 TOOLS ===
