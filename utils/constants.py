@@ -76,41 +76,43 @@ Type /help if you need me to spell it out for you. 😉
     """,
     
     "help": """
-Alright, pay attention because I'm only explaining this once. 📋
+**Quick Start** — the 3 things you'll do most:
 
-**Contact Management** _(the basics)_
-/add - Add someone to my impeccable memory
-/view <name> - Pull up everything I know
-/update <name> - Fix your mistakes
-/delete <name> - Make them disappear ✨
-/list - See everyone (you're welcome)
-/search <query> - Find that person you forgot
+1. **Add a contact:** just type "Add Jane Doe, CEO at Acme"
+2. **Enrich them:** say "enrich Jane" and I'll dig up everything
+3. **Save:** say "save" or "done" when you're happy with the draft
 
-**Research & Intel** _(my specialty)_
-/enrich <name> - I'll dig up the good stuff
-/research <company> - Company deep dive
-/linkedin <name> - Find their LinkedIn
+---
 
-**Reports & Stats** _(making you look good)_
-/stats - The numbers, darling
-/report <name> - Full dossier on someone
-/export - Everything in a neat CSV
+**Contact Management**
+/add <name> — start a new contact
+/view <name> — pull up a contact card
+/update <name> — modify existing contact
+/delete <name> — remove a contact
+/list — see all contacts
+/search <query> — natural-language search ("founders in fintech")
 
-**Stay Organized** _(because you need me)_
-/remind <name> <date> - I'll remind you to follow up
-/note <name> <note> - Add gossip... I mean, notes
-/tag <name> <tags> - Categorize your people
-/ask <question> - Ask me anything about your network
+**Research & Enrichment**
+/enrich <name> — multi-source deep research
+/research <query> — company or person deep dive
+/linkedin <url> — look up a LinkedIn profile
 
-**Behind the Scenes** 🎭
-/dashboard - How things are running
-/analytics - Usage stats
-/eval - Performance review
+**Relationships & Follow-ups**
+/remind <name> <date> — set a follow-up reminder
+/followups — see pending follow-ups
+/digest — daily network briefing
+/health <name> — relationship score
+
+**Outreach**
+/draft <query> <purpose> — draft personalized emails
+
+**Reports**
+/stats — network overview
+/export — download CSV
 
 **Pro Tips:**
-📱 Send me a voice memo - I'll transcribe it
-📸 Send a business card photo - I'll read it
-💬 Just type naturally - I'll figure it out
+📸 Send a business card photo — I'll extract it
+💬 Just type naturally — "met Sarah at TechCrunch, she's a seed investor"
 
 _I'm just that good._ 💅
     """,

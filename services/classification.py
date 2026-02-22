@@ -43,7 +43,7 @@ class ClassificationService:
         
         # Find the highest scoring category
         if total_matches == 0:
-            return "professional", 0.3
+            return "unknown", 0.2
         
         max_category = max(scores, key=scores.get)
         max_score = scores[max_category]

@@ -11,6 +11,7 @@ Architecture (Session-Based):
 
 import json
 import logging
+import os
 import re
 import time
 from typing import Optional, Dict, Any, List
@@ -57,6 +58,13 @@ def _cleanup_stale_user_data():
         _user_search_query.pop(uid, None)
         _user_last_mentioned_person.pop(uid, None)
         _user_timestamps.pop(uid, None)
+
+
+def _normalize_name(name: str) -> str:
+    """Normalize name for comparison."""
+    if not name:
+        return ""
+    return re.sub(r'\s+', ' ', name.strip().lower())
 
 
 def extract_linkedin_url(text: str) -> Optional[str]:
@@ -272,6 +280,17 @@ class AgentTools:
             existing_name = self.session.draft.name
             return f"Already editing {existing_name}. Say 'save' to save first, or 'cancel' to discard."
 
+        # Early duplicate detection
+        existing = find_contact_in_storage(name)
+        if existing:
+            return f"'{existing.name}' already exists. Say 'update {existing.name}' to modify."
+
+        if email:
+            sheets = get_sheets_service()
+            email_match = sheets.find_contact_by_email(email)
+            if email_match:
+                return f"Email {email} already belongs to '{email_match.name}'."
+
         # Create new draft in session
         draft = self.session.start_new_contact(name)
 
@@ -292,6 +311,8 @@ class AgentTools:
             draft.update_field('location', location)
         if notes:
             draft.append_notes(notes)
+        if company_description:
+            draft.update_field('company_description', company_description)
 
         # Split name
         name_parts = name.split()
@@ -330,7 +351,13 @@ class AgentTools:
             details.append(f"Type: {contact_type}")
 
         detail_str = f" ({', '.join(details)})" if details else ""
-        return f"Started new contact: {name}{detail_str}. Add more info or say 'done' to save."
+        response = f"Started new contact: {name}{detail_str}. Add more info or say 'done' to save."
+
+        missing = draft.get_missing_fields()
+        if missing:
+            response += f"\n\nStill missing: {', '.join(missing)}"
+
+        return response
 
     async def update_contact(self, title: str = None, company: str = None,
                             email: str = None, phone: str = None, linkedin: str = None,
@@ -423,6 +450,7 @@ class AgentTools:
                 linkedin_url=draft.linkedin_url,
                 contact_type=draft.contact_type,
                 industry=draft.industry,
+                company_description=draft.company_description,
                 address=draft.location,
                 notes=draft.notes + ("\n\n" + draft.research_summary if draft.research_summary else ""),
                 user_id=self.user_id
@@ -1848,8 +1876,8 @@ Provide a brief, informative summary suitable for a contact profile."""
             result = await tool_map[tool_name](**arguments)
             return result
         except TypeError as e:
-            logger.error(f"Tool argument error: {e}")
+            logger.error(f"[TOOL] {tool_name} argument error: {e}")
             return f"Error calling {tool_name}: Invalid arguments"
         except Exception as e:
-            logger.error(f"Tool execution error: {e}")
+            logger.error(f"[TOOL] {tool_name} execution error: {e}")
             return f"Error executing {tool_name}: {str(e)}"

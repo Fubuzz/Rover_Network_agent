@@ -40,6 +40,7 @@ class ContactDraft(BaseModel):
     title: Optional[str] = None
     company: Optional[str] = None
     industry: Optional[str] = None
+    company_description: Optional[str] = None
     contact_type: Optional[str] = None  # Founder, Enabler, Investor
 
     # Contact info
@@ -120,9 +121,12 @@ class ContactDraft(BaseModel):
         return "linkedin.com" in url.lower()
 
     def _clean_phone(self, phone: str) -> str:
-        """Clean phone number."""
+        """Clean phone number. Reject if fewer than 7 digits."""
         # Keep only digits, +, -, (, ), and spaces
         cleaned = re.sub(r'[^\d+\-() ]', '', phone)
+        digits_only = re.sub(r'\D', '', cleaned)
+        if len(digits_only) < 7:
+            return ""
         return cleaned.strip()
 
     def get_display_card(self) -> str:
@@ -153,6 +157,11 @@ class ContactDraft(BaseModel):
             lines.append(f"🏢 {self.industry}")
         if self.contact_type:
             lines.append(f"👤 {self.contact_type}")
+        if self.company_description:
+            desc = self.company_description
+            if len(desc) > 100:
+                desc = desc[:100] + "..."
+            lines.append(f"📄 {desc}")
 
         if self.research_summary:
             lines.append("")
@@ -190,6 +199,7 @@ class ContactDraft(BaseModel):
             "_industry": self.industry,
             "_location": self.location,
             "_contact_type": self.contact_type,
+            "_company_description": self.company_description,
             "_notes": self.notes,
             "_research_summary": self.research_summary,
         }
@@ -316,11 +326,15 @@ class UserSession:
 
 # Global session storage
 _user_sessions: Dict[str, UserSession] = {}
+MAX_SESSIONS = 1000
 
 
 def get_user_session(user_id: str) -> UserSession:
-    """Get or create a user session."""
+    """Get or create a user session. Evicts oldest when at capacity."""
     if user_id not in _user_sessions:
+        if len(_user_sessions) >= MAX_SESSIONS:
+            oldest = min(_user_sessions, key=lambda uid: _user_sessions[uid].last_activity)
+            del _user_sessions[oldest]
         _user_sessions[user_id] = UserSession(user_id)
     return _user_sessions[user_id]
 

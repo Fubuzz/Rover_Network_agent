@@ -254,7 +254,10 @@ def extract_phone(text: str) -> Optional[str]:
         cleaned
     )
     if match:
-        return match.group().strip()
+        phone = match.group().strip()
+        if len(re.sub(r'\D', '', phone)) >= 7:
+            return phone
+        return None
     return None
 
 

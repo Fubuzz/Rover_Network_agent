@@ -3,6 +3,8 @@ Airtable service for contact management.
 Replaces Google Sheets as the primary database backend.
 """
 
+import re
+
 from pyairtable import Api, Table
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -14,6 +16,11 @@ from data.schema import (
     Draft, DRAFT_SHEET_HEADERS, ApprovalStatus, SendStatus,
     CONTACTS_SHEET_NAME, MATCHES_SHEET_NAME, DRAFTS_SHEET_NAME
 )
+
+
+def _escape_airtable_value(value: str) -> str:
+    """Escape single quotes for Airtable formula strings."""
+    return value.replace("'", "\\'")
 
 
 class AirtableService:
@@ -509,7 +516,7 @@ class AirtableService:
             name_lower = name.lower().strip()
 
             # Try exact match on full_name first
-            formula = f"LOWER({{full_name}}) = '{name_lower}'"
+            formula = f"LOWER({{full_name}}) = '{_escape_airtable_value(name_lower)}'"
             records = self.contacts_table.all(formula=formula)
 
             if records:
@@ -518,7 +525,7 @@ class AirtableService:
             # Try first name match
             first_name = name_lower.split()[0] if name_lower else ""
             if first_name:
-                formula = f"LOWER({{first_name}}) = '{first_name}'"
+                formula = f"LOWER({{first_name}}) = '{_escape_airtable_value(first_name)}'"
                 records = self.contacts_table.all(formula=formula)
 
                 if records:
@@ -528,6 +535,13 @@ class AirtableService:
                         combined = f"{contact.first_name or ''} {contact.last_name or ''}".lower().strip()
                         if combined == name_lower or (contact.first_name or "").lower().strip() == name_lower:
                             return contact
+
+            # Normalized name fallback — scan all contacts when formula lookups miss
+            normalized_target = re.sub(r'\s+', ' ', name_lower)
+            for contact in self.get_all_contacts():
+                normalized_contact = re.sub(r'\s+', ' ', (contact.name or "").lower().strip())
+                if normalized_contact == normalized_target:
+                    return contact
 
             return None
 
@@ -543,7 +557,7 @@ class AirtableService:
             return None
 
         try:
-            formula = f"{{contact_id}} = '{contact_id.strip()}'"
+            formula = f"{{contact_id}} = '{_escape_airtable_value(contact_id.strip())}'"
             records = self.contacts_table.all(formula=formula)
 
             if records:
@@ -563,7 +577,7 @@ class AirtableService:
             return None
 
         try:
-            formula = f"{{contact_id}} = '{contact_id.strip()}'"
+            formula = f"{{contact_id}} = '{_escape_airtable_value(contact_id.strip())}'"
             records = self.contacts_table.all(formula=formula)
 
             if records:
@@ -584,7 +598,7 @@ class AirtableService:
 
         try:
             email = email.lower().strip()
-            formula = f"LOWER({{email}}) = '{email}'"
+            formula = f"LOWER({{email}}) = '{_escape_airtable_value(email)}'"
             records = self.contacts_table.all(formula=formula)
 
             if records:
@@ -610,7 +624,7 @@ class AirtableService:
                 username = linkedin_url
 
             # Search in both LinkedIn URL fields
-            formula = f"FIND('{username}', LOWER({{contact_linkedin_url}}))"
+            formula = f"FIND('{_escape_airtable_value(username)}', LOWER({{contact_linkedin_url}}))"
             records = self.contacts_table.all(formula=formula)
 
             if records:
