@@ -12,6 +12,8 @@ import logging
 import asyncio
 from typing import Optional, Dict
 
+from config import AIConfig
+
 logger = logging.getLogger('network_agent')
 
 
@@ -142,7 +144,7 @@ async def auto_enrich_contact(name: str, company: str = None, linkedin_url: str 
         ])
         
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=AIConfig.OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": """Extract professional information from search results. Return ONLY a JSON object with these fields (omit any you can't determine):
 {

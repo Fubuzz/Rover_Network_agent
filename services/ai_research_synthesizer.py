@@ -14,7 +14,7 @@ import re
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 
-from config import APIConfig
+from config import APIConfig, AIConfig
 from data.research_schema import (
     ResearchResult, PersonIntelligence, CompanyIntelligence, LinkedInProfile,
     SourcedValue, ConfidenceLevel, DataSource
@@ -131,7 +131,7 @@ class AIResearchSynthesizer:
                 import google.generativeai as genai
                 if APIConfig.GEMINI_API_KEY:
                     genai.configure(api_key=APIConfig.GEMINI_API_KEY)
-                    self._gemini_client = genai.GenerativeModel('gemini-1.5-flash')
+                    self._gemini_client = genai.GenerativeModel(AIConfig.GEMINI_MODEL)
                     logger.info("Gemini client initialized for research synthesis")
             except Exception as e:
                 logger.warning(f"Gemini initialization failed: {e}")
@@ -184,7 +184,7 @@ class AIResearchSynthesizer:
         """Call OpenAI for synthesis."""
         try:
             response = self._openai_client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=AIConfig.OPENAI_MODEL,
                 messages=[
                     {"role": "system", "content": "You are a research analyst. Return only valid JSON."},
                     {"role": "user", "content": prompt}

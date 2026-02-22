@@ -14,7 +14,7 @@ from typing import Optional, List, Dict
 from datetime import datetime
 
 from pyairtable import Api
-from config import AirtableConfig
+from config import AirtableConfig, AIConfig
 
 logger = logging.getLogger('network_agent')
 
@@ -240,7 +240,7 @@ class IntroductionService:
             client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
             
             response = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=AIConfig.OPENAI_MODEL,
                 messages=[
                     {"role": "system", "content": "You write brief, warm professional introduction messages. Keep it under 100 words. Be natural, not corporate."},
                     {"role": "user", "content": f"Draft an intro message from me (Ahmed) to {connector_info}, introducing them to {target_info}.{context_str}\n\nWrite just the message, no subject line."}

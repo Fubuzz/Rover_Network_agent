@@ -156,7 +156,10 @@ class ContactDraft(BaseModel):
 
         if self.research_summary:
             lines.append("")
-            lines.append(f"**Summary:** {self.research_summary[:200]}...")
+            summary = self.research_summary
+            if len(summary) > 200:
+                summary = summary[:200] + "..."
+            lines.append(f"**Summary:** {summary}")
 
         return "\n".join(lines)
 

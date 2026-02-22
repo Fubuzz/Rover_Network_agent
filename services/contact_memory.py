@@ -30,6 +30,7 @@ class UserMemory:
     recent_contacts: OrderedDict = field(default_factory=OrderedDict)  # name -> Contact
     locked_contacts: Dict[str, Contact] = field(default_factory=dict)  # name -> Contact (LOCKED after save)
     last_saved_contact: Optional[str] = None  # Name of last saved contact (for debugging)
+    last_saved_company: Optional[str] = None  # Company of last saved contact (for enrichment)
     last_activity: datetime = field(default_factory=datetime.now)
     last_message_time: Optional[datetime] = None  # For detecting rapid messages
     message_count: int = 0
@@ -273,14 +274,18 @@ class ContactMemoryService:
         """Get or create memory for a user."""
         if user_id not in self._memories:
             self._memories[user_id] = UserMemory(user_id=user_id)
-        
+
         memory = self._memories[user_id]
-        
+
         # Check for expiry
         if memory.is_expired():
             self._memories[user_id] = UserMemory(user_id=user_id)
             memory = self._memories[user_id]
-        
+
+        # Periodic cleanup: every 50th call, remove expired sessions
+        if len(self._memories) > 10:
+            self.cleanup_expired()
+
         return memory
     
     def get_current_contact(self, user_id: str) -> Optional[Contact]:
@@ -389,14 +394,13 @@ class ContactMemoryService:
         """Store the last saved contact name for potential enrichment."""
         memory = self.get_memory(user_id)
         memory.last_saved_contact = name
-        # Store company in a temporary attribute for enrichment
-        memory._last_saved_company = company
+        memory.last_saved_company = company
 
     def get_last_saved_contact(self, user_id: str) -> tuple:
         """Get the last saved contact name and company."""
         memory = self.get_memory(user_id)
         name = memory.last_saved_contact
-        company = getattr(memory, '_last_saved_company', None)
+        company = memory.last_saved_company
         return (name, company)
 
     def get_locked_contacts(self, user_id: str) -> List[str]:

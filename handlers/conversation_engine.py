@@ -955,8 +955,8 @@ async def handle_search(user_id: str, result: ConversationResult, original_messa
                     response += f"_{r.get('snippet', '')[:150]}_\n"
                     response += f"Link: {r.get('link', '')}\n\n"
                 return response
-        except:
-            pass
+        except Exception as fallback_err:
+            logger.error(f"Fallback search also failed: {fallback_err}")
 
         return (
             "Oops! Had trouble with that search. 😅\n\n"
@@ -1018,8 +1018,29 @@ async def handle_unknown(user_id: str, message: str = "") -> str:
 # NEW INTENT HANDLERS (Confirm, Deny, Summarize, General Request)
 # ============================================================
 
-# Store last search results for summarization
+# Store last search results for summarization (with timestamps for cleanup)
 _last_search_results: dict = {}
+_last_search_timestamps: dict = {}
+_SEARCH_RESULTS_TTL = 1800  # 30 minutes
+
+
+def _store_search_results(user_id: str, results):
+    """Store search results with timestamp for TTL-based cleanup."""
+    import time
+    _last_search_results[user_id] = results
+    _last_search_timestamps[user_id] = time.time()
+    _cleanup_stale_search_results()
+
+
+def _cleanup_stale_search_results():
+    """Remove search results older than TTL."""
+    import time
+    now = time.time()
+    stale = [uid for uid, ts in _last_search_timestamps.items()
+             if now - ts > _SEARCH_RESULTS_TTL]
+    for uid in stale:
+        _last_search_results.pop(uid, None)
+        _last_search_timestamps.pop(uid, None)
 
 
 async def handle_confirm(user_id: str, result: ConversationResult) -> str:
@@ -1174,18 +1195,29 @@ def _check_recall_last_saved(memory, user_id: str, msg_lower: str) -> Optional[s
         return None
 
     # Patterns that indicate user wants to add to last saved contact
+    # Each pattern requires a contact-info keyword to reduce false positives
     recall_patterns = [
         "add his ", "add her ", "add their ",
-        "forgot ", "you forgot", "i forgot",
-        "wait,", "wait ", "also add", "also include",
-        "add the ", "update his ", "update her ",
+        "you forgot", "i forgot",
+        "wait,", "also add", "also include",
+        "update his ", "update her ",
         "his email", "her email", "his phone", "her phone",
         "his linkedin", "her linkedin",
-        "missing ", "add email", "add phone", "add linkedin"
+        "add email", "add phone", "add linkedin"
+    ]
+
+    # Contact-info keywords that must be present for ambiguous patterns
+    contact_info_keywords = [
+        "email", "phone", "linkedin", "title", "company",
+        "address", "number", "position", "role"
     ]
 
     # Check if message matches recall patterns
     is_recall = any(pattern in msg_lower for pattern in recall_patterns)
+
+    # For "wait " alone (without comma), require a contact-info keyword
+    if not is_recall and "wait " in msg_lower:
+        is_recall = any(kw in msg_lower for kw in contact_info_keywords)
 
     if not is_recall:
         return None
@@ -1339,12 +1371,12 @@ async def handle_general_request(user_id: str, result: ConversationResult, messa
 
 
 def store_search_results(user_id: str, query: str, results: list):
-    """Store search results for later summarization."""
-    _last_search_results[user_id] = {
+    """Store search results for later summarization (with TTL cleanup)."""
+    _store_search_results(user_id, {
         'query': query,
         'results': results,
         'timestamp': __import__('datetime').datetime.now().isoformat()
-    }
+    })
 
 
 # ============================================================
@@ -1416,8 +1448,14 @@ def should_override_to_update(message: str, result: ConversationResult, state: C
             return True
 
     # Short to medium messages while collecting are almost always updates
+    # But skip override if the message looks like "Add <Name>" (new contact)
     word_count = len(message.split())
     if word_count <= 15:
+        # Check if message starts with "add" followed by a capitalized name
+        words = message.split()
+        if (len(words) >= 2 and words[0].lower() == "add" and
+                words[1][0].isupper() and not contains_contact_info(message)):
+            return False
         return True
 
     # Contains pronouns referring to current contact
@@ -1462,9 +1500,7 @@ async def process_message(user_id: str, message: str) -> str:
         return response
 
     except Exception as e:
-        logger.error(f"[AGENT] Error: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.warning(f"[AGENT] Agent failed, falling back to legacy system: {e}")
 
         # Fallback to old system if agent fails
         return await process_message_legacy(user_id, message)

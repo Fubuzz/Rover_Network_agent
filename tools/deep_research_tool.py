@@ -13,9 +13,9 @@ from typing import Type, Optional
 from pydantic import BaseModel, Field
 from crewai.tools import BaseTool
 
-from services.research_engine import get_research_engine, DeepResearchEngine
+from services.research_engine import get_research_engine
 from services.ai_research_synthesizer import get_synthesizer
-from data.research_schema import ResearchRequest, ResearchResult, ConfidenceLevel
+from data.research_schema import ResearchRequest, ResearchResult
 
 
 logger = logging.getLogger('deep_research_tools')
@@ -24,9 +24,9 @@ logger = logging.getLogger('deep_research_tools')
 class DeepPersonResearchInput(BaseModel):
     """Input for deep person research."""
     name: str = Field(description="Full name of the person to research")
-    company: str = Field(default=None, description="Company name for context (optional)")
-    known_title: str = Field(default=None, description="Known job title (optional)")
-    known_location: str = Field(default=None, description="Known location (optional)")
+    company: Optional[str] = Field(default=None, description="Company name for context (optional)")
+    known_title: Optional[str] = Field(default=None, description="Known job title (optional)")
+    known_location: Optional[str] = Field(default=None, description="Known location (optional)")
 
 
 class DeepPersonResearchTool(BaseTool):
@@ -57,8 +57,8 @@ class DeepPersonResearchTool(BaseTool):
     """
     args_schema: Type[BaseModel] = DeepPersonResearchInput
     
-    def _run(self, name: str, company: str = None, 
-             known_title: str = None, known_location: str = None) -> str:
+    def _run(self, name: str, company: Optional[str] = None,
+             known_title: Optional[str] = None, known_location: Optional[str] = None) -> str:
         """Execute deep person research."""
         logger.info(f"[TOOL] deep_person_research: {name} (company: {company})")
         
@@ -171,7 +171,7 @@ class DeepPersonResearchTool(BaseTool):
 class LinkedInSearchInput(BaseModel):
     """Input for LinkedIn search."""
     name: str = Field(description="Name of the person")
-    company: str = Field(default=None, description="Company for context (optional)")
+    company: Optional[str] = Field(default=None, description="Company for context (optional)")
 
 
 class LinkedInSearchTool(BaseTool):
@@ -190,7 +190,7 @@ class LinkedInSearchTool(BaseTool):
     """
     args_schema: Type[BaseModel] = LinkedInSearchInput
     
-    def _run(self, name: str, company: str = None) -> str:
+    def _run(self, name: str, company: Optional[str] = None) -> str:
         """Execute LinkedIn search."""
         logger.info(f"[TOOL] linkedin_search: {name} (company: {company})")
         
@@ -329,13 +329,6 @@ class ExtractContactFieldsTool(BaseTool):
                     lines.append(f"- **{field}:** {value}")
         
         return "\n".join(lines)
-
-
-# Tool instances for easy import
-deep_person_research_tool = DeepPersonResearchTool()
-linkedin_search_tool = LinkedInSearchTool()
-company_research_tool = CompanyResearchTool()
-extract_contact_fields_tool = ExtractContactFieldsTool()
 
 
 def get_research_tools():

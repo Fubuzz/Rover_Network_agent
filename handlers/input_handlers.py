@@ -3,6 +3,7 @@ Telegram handlers for voice, image, and text input processing.
 Uses the AI-powered conversation engine for all text interactions.
 """
 
+import logging
 import re
 from telegram import Update
 from telegram.error import BadRequest
@@ -15,26 +16,12 @@ from data.schema import OperationType
 from config import FeatureFlags
 from handlers.conversation_engine import process_message
 
+logger = logging.getLogger('network_agent')
+
 
 # ============================================================
 # SAFE MESSAGE SENDING
 # ============================================================
-
-def escape_markdown(text: str) -> str:
-    """Escape special Markdown characters for Telegram."""
-    # Characters that need escaping in Telegram Markdown
-    escape_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
-    for char in escape_chars:
-        text = text.replace(char, f'\\{char}')
-    return text
-
-
-def format_response_safe(text: str) -> str:
-    """Format response with safe Markdown - escape problematic characters in data values."""
-    # Don't escape the formatting markers we intentionally use, but escape data
-    # Simple approach: use HTML mode instead which is more forgiving
-    return text
-
 
 async def safe_reply(message, text: str):
     """Send reply, falling back to plain text if Markdown fails."""
@@ -104,23 +91,21 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
             tracker.end_operation(success=False, error_message="Transcription failed")
             return
         
-        await update.message.reply_text(
-            f"**I heard:** _{transcript}_\n\nProcessing... 💭",
-            parse_mode="Markdown"
+        await safe_reply(
+            update.message,
+            f"**I heard:** _{transcript}_\n\nProcessing... 💭"
         )
-        
+
         # Process the transcript through the conversation engine
         response = await process_message(user_id, transcript)
-        
-        await update.message.reply_text(response, parse_mode="Markdown")
+
+        await safe_reply(update.message, response)
         tracker.end_operation(success=True)
         
     except Exception as e:
+        logger.error(f"Voice processing failed: {e}")
         tracker.end_operation(success=False, error_message=str(e))
-        await update.message.reply_text(
-            f"Voice processing hit a snag. 🎤💥\n\n_{str(e)}_",
-            parse_mode="Markdown"
-        )
+        await update.message.reply_text("Voice processing hit a snag. 🎤 Try again?")
 
 
 # ============================================================
@@ -185,7 +170,7 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
             if value:
                 lines.append(f"**{field.replace('_', ' ').title()}:** {value}")
 
-        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        await safe_reply(update.message, "\n".join(lines))
 
         # Check if user is already collecting a contact
         memory = get_memory_service()
@@ -197,13 +182,13 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
                 # If the card has a different name, ask the user
                 if extracted_name and extracted_name != pending_name and extracted_name not in pending_name:
-                    await update.message.reply_text(
+                    await safe_reply(
+                        update.message,
                         f"I see you're adding **{pending.name}**, but this card is for **{extracted.get('name')}**.\n\n"
                         f"What should I do?\n"
                         f"• Say _'add to current'_ to add this info to {pending.name}\n"
                         f"• Say _'new contact'_ to start a new contact for {extracted.get('name')}\n"
-                        f"• Say _'done'_ to save {pending.name} first",
-                        parse_mode="Markdown"
+                        f"• Say _'done'_ to save {pending.name} first"
                     )
                     tracker.end_operation(success=True)
                     return
@@ -221,12 +206,12 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
                 if text_repr.strip():
                     response = await process_message(user_id, text_repr.strip())
-                    await update.message.reply_text(response, parse_mode="Markdown")
+                    await safe_reply(update.message, response)
                 else:
-                    await update.message.reply_text(
+                    await safe_reply(
+                        update.message,
                         f"Hmm, couldn't extract much from that card for **{pending.name}**. 🤔\n"
-                        f"Try adding details manually!",
-                        parse_mode="Markdown"
+                        f"Try adding details manually!"
                     )
 
                 tracker.end_operation(success=True)
@@ -244,16 +229,14 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
             text_repr += f", phone: {extracted['phone']}"
 
         response = await process_message(user_id, text_repr)
-        await update.message.reply_text(response, parse_mode="Markdown")
-        
+        await safe_reply(update.message, response)
+
         tracker.end_operation(success=True)
-        
+
     except Exception as e:
+        logger.error(f"Photo processing failed: {e}")
         tracker.end_operation(success=False, error_message=str(e))
-        await update.message.reply_text(
-            f"Image processing went sideways. 📸💥\n\n_{str(e)}_",
-            parse_mode="Markdown"
-        )
+        await update.message.reply_text("Image processing went sideways. 📸 Try again?")
 
 
 # ============================================================

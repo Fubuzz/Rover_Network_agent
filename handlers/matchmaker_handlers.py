@@ -238,7 +238,7 @@ async def save_matches_command(update: Update, context: ContextTypes.DEFAULT_TYP
         saved_count = service.save_matches_to_sheet(matches)
 
         # Clear pending matches after saving
-        del _pending_matches[user_id]
+        _pending_matches.pop(user_id, None)
 
         if saved_count > 0:
             await update.message.reply_text(

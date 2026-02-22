@@ -7,6 +7,7 @@ from typing import Optional
 
 from agents.reporting_agent import create_reporting_agent
 from agents.evaluation_agent import create_evaluation_agent
+from config import LoggingConfig
 
 
 class ReportingCrew:
@@ -36,7 +37,7 @@ class ReportingCrew:
             agents=[self.reporting_agent],
             tasks=[stats_task],
             process=Process.sequential,
-            verbose=True
+            verbose=LoggingConfig.DEBUG_MODE
         )
         
         result = crew.kickoff()
@@ -60,7 +61,7 @@ class ReportingCrew:
             agents=[self.reporting_agent],
             tasks=[stats_task],
             process=Process.sequential,
-            verbose=True
+            verbose=LoggingConfig.DEBUG_MODE
         )
         
         result = crew.kickoff()
@@ -96,7 +97,7 @@ class ReportingCrew:
             agents=[self.reporting_agent, self.evaluation_agent],
             tasks=[details_task, quality_task],
             process=Process.sequential,
-            verbose=True
+            verbose=LoggingConfig.DEBUG_MODE
         )
         
         result = crew.kickoff()
@@ -122,7 +123,7 @@ class ReportingCrew:
             agents=[self.reporting_agent],
             tasks=[insights_task],
             process=Process.sequential,
-            verbose=True
+            verbose=LoggingConfig.DEBUG_MODE
         )
         
         result = crew.kickoff()

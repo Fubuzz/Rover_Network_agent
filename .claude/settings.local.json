@@ -24,8 +24,16 @@
       "Bash(python scripts/test_simulation.py:*)",
       "Bash(git diff:*)",
       "Bash(git status:*)",
-      "Bash(git rebase:*)",
-      "Bash(GIT_EDITOR=true git rebase:*)"
+      "Bash(wc:*)",
+      "Bash(grep:*)",
+      "Bash(pip3 check:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(pip freeze:*)",
+      "Bash(gh repo create:*)",
+      "Bash(gh repo edit:*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)",
+      "Bash(git stash:*)"
     ]
   }
 }

@@ -24,7 +24,7 @@ from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 
-from config import APIConfig
+from config import APIConfig, AIConfig
 from data.research_schema import (
     ResearchResult, ResearchRequest, 
     PersonIntelligence, CompanyIntelligence, LinkedInProfile,
@@ -829,7 +829,7 @@ class DeepResearchEngine:
                 return  # Nothing to validate
             
             response = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=AIConfig.OPENAI_MODEL,
                 messages=[
                     {"role": "system", "content": """You are a data validation agent. Given what we KNOW about a person and what we FOUND via web search, determine if the found data is about the SAME person or a DIFFERENT person with a similar name.
 

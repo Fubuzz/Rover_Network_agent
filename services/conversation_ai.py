@@ -10,7 +10,7 @@ from enum import Enum
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, field
 
-from config import APIConfig
+from config import APIConfig, AIConfig
 from data.schema import Contact
 from utils.text_cleaner import clean_entities
 
@@ -400,7 +400,7 @@ async def analyze_message(
         state=state_str,
         current_contact=current_contact_str,
         recent_contacts=recent_contacts_str,
-        has_search_results="yes" if recent_contacts else "no",
+        has_search_results="no",  # Search results are tracked separately in agent_tools
         message=message
     )
     
@@ -424,7 +424,7 @@ async def analyze_message(
         try:
             print("[AI] Trying OpenAI fallback...")
             response = _openai_client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=AIConfig.OPENAI_MODEL,
                 messages=[
                     {"role": "system", "content": "You are a JSON-only assistant that analyzes messages for a contact management system. Always respond with valid JSON only, no markdown."},
                     {"role": "user", "content": prompt}

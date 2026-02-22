@@ -10,7 +10,7 @@ from typing import Optional, Dict, Any, List
 
 from openai import OpenAI
 
-from config import APIConfig
+from config import APIConfig, AIConfig
 from services.contact_memory import get_memory_service, ConversationState
 from services.agent_tools import (
     AgentTools, _user_search_results, _user_summaries,
@@ -604,7 +604,7 @@ class RoverAgent:
         client = self._get_client()
 
         return client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=AIConfig.OPENAI_MODEL,
             messages=self.messages,
             tools=AGENT_TOOLS,
             tool_choice="auto",

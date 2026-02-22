@@ -56,6 +56,7 @@ todos:
   - id: testing_documentation
     content: Test all features including CrewAI agents, crews, analytics tracking, logging, evaluation interface, create README with setup instructions, and document usage examples with agent workflows
     status: completed
+isProject: false
 ---
 
 # Telegram Network Nurturing Agent - Implementation Plan
@@ -885,7 +886,7 @@ Columns:
 
 ## Analytics Database Structure
 
-**SQLite Database: `analytics.db`**
+**SQLite Database: `analytics.db**`
 
 ### Operations Table
 

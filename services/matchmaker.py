@@ -25,9 +25,8 @@ class MatchmakerService:
 
     def __init__(self):
         self.sheets_service = get_sheets_service()
-        # Use gpt-4o-mini for faster matching with 128k context window
         self.llm = ChatOpenAI(
-            model="gpt-4o-mini",
+            model=AIConfig.OPENAI_MODEL,
             api_key=os.getenv("OPENAI_API_KEY"),
             temperature=0.3
         )

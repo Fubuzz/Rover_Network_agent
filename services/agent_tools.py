@@ -12,6 +12,7 @@ Architecture (Session-Based):
 import json
 import logging
 import re
+import time
 from typing import Optional, Dict, Any, List
 
 from services.contact_memory import get_memory_service, ConversationState
@@ -19,6 +20,7 @@ from services.user_session import get_user_session, ContactDraft, DraftStatus
 from services.airtable_service import get_sheets_service
 from services.enrichment import get_enrichment_service
 from services.ai_service import get_ai_service
+from config import AIConfig
 from data.schema import Contact
 
 
@@ -26,12 +28,35 @@ logger = logging.getLogger('network_agent')
 
 
 # Global storage for search results per user (for summarization)
+# TTL-based cleanup prevents unbounded memory growth
 _user_search_results: Dict[str, List[Dict]] = {}
 _user_summaries: Dict[str, str] = {}
 _user_last_contact: Dict[str, str] = {}  # Track last mentioned/viewed contact name
 _user_last_action: Dict[str, str] = {}  # Track last action for "Yes" context
 _user_search_query: Dict[str, str] = {}  # Track what was searched
 _user_last_mentioned_person: Dict[str, str] = {}  # Track last PERSON mentioned (for "Add him/her")
+_user_timestamps: Dict[str, float] = {}  # Track last activity per user for TTL cleanup
+_USER_DATA_TTL = 3600  # 1 hour TTL for per-user data
+
+
+def _touch_user(user_id: str):
+    """Update user's last activity timestamp."""
+    _user_timestamps[user_id] = time.time()
+
+
+def _cleanup_stale_user_data():
+    """Remove per-user data older than TTL."""
+    now = time.time()
+    stale = [uid for uid, ts in _user_timestamps.items()
+             if now - ts > _USER_DATA_TTL]
+    for uid in stale:
+        _user_search_results.pop(uid, None)
+        _user_summaries.pop(uid, None)
+        _user_last_contact.pop(uid, None)
+        _user_last_action.pop(uid, None)
+        _user_search_query.pop(uid, None)
+        _user_last_mentioned_person.pop(uid, None)
+        _user_timestamps.pop(uid, None)
 
 
 def extract_linkedin_url(text: str) -> Optional[str]:
@@ -232,6 +257,8 @@ class AgentTools:
         self.user_id = user_id
         self.memory = get_memory_service()
         self.session = get_user_session(user_id)
+        _touch_user(user_id)
+        _cleanup_stale_user_data()
 
     async def add_contact(self, name: str, title: str = None, company: str = None,
                          email: str = None, phone: str = None, linkedin: str = None,
@@ -1530,7 +1557,7 @@ Provide a brief, informative summary suitable for a contact profile."""
         
         try:
             response = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=AIConfig.OPENAI_MODEL,
                 messages=[
                     {"role": "system", "content": "You are a contact search assistant. Given a list of contacts and a search query, return the names of matching contacts as a JSON array. Only return names that genuinely match the query. If none match, return an empty array."},
                     {"role": "user", "content": f"Contacts:\n{contacts_text}\n\nQuery: {query}\n\nReturn matching contact names as JSON array:"}
@@ -1634,7 +1661,7 @@ Provide a brief, informative summary suitable for a contact profile."""
         try:
             # Step 1: Find matching contacts
             filter_response = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=AIConfig.OPENAI_MODEL,
                 messages=[
                     {"role": "system", "content": "Return matching contact names as a JSON array. Only include contacts that genuinely match. Return ONLY valid JSON."},
                     {"role": "user", "content": f"Contacts:\n{contacts_text}\n\nQuery: {contacts_query}\n\nReturn matching names as JSON array:"}
@@ -1673,7 +1700,7 @@ Provide a brief, informative summary suitable for a contact profile."""
                 contact_details.append(details)
             
             email_response = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=AIConfig.OPENAI_MODEL,
                 messages=[
                     {"role": "system", "content": f"You are Ahmed Abaza, founder of Synapse Analytics (AI credit decisioning for risk teams). Draft short, warm, professional emails. Keep each under 80 words. Be natural, not corporate. Sign off as Ahmed."},
                     {"role": "user", "content": f"Draft personalized emails to each of these contacts.\nPurpose: {purpose}.{date_str}\n\nContacts:\n" + "\n".join(contact_details) + "\n\nDraft one email per contact, clearly labeled with their name."}
@@ -1773,7 +1800,7 @@ Provide a brief, informative summary suitable for a contact profile."""
                     ])
                     
                     response = client.chat.completions.create(
-                        model="gpt-4o-mini",
+                        model=AIConfig.OPENAI_MODEL,
                         messages=[
                             {"role": "system", "content": f"Based on these search results about {name_from_slug} (LinkedIn: {url}), write a concise professional profile. Include: current role, company, location, skills, and background. Only include info about THIS specific person — ignore anyone else with a similar name. Be concise."},
                             {"role": "user", "content": search_text}
