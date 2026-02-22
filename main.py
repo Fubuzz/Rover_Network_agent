@@ -28,6 +28,7 @@ from handlers.input_handlers import get_input_handlers
 from handlers.analytics_handlers import get_analytics_handlers
 from handlers.evaluation_handlers import get_evaluation_handlers
 from handlers.conversation_handlers import get_conversation_handlers
+from handlers.callback_handlers import get_callback_handlers
 
 
 def setup_logging():
@@ -159,10 +160,14 @@ def main():
     for handler in get_evaluation_handlers():
         application.add_handler(handler)
     
+    # Callback handlers (inline keyboard buttons) — before input handlers
+    for handler in get_callback_handlers():
+        application.add_handler(handler)
+
     # Conversation/help handlers
     for handler in get_conversation_handlers():
         application.add_handler(handler)
-    
+
     # Input handlers (voice, image, text) - should be last
     for handler in get_input_handlers():
         application.add_handler(handler)

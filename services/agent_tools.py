@@ -24,6 +24,7 @@ from services.enrichment import get_enrichment_service
 from services.ai_service import get_ai_service
 from config import AIConfig
 from data.schema import Contact
+from services.message_response import MessageResponse
 
 
 logger = logging.getLogger('network_agent')
@@ -351,7 +352,12 @@ class AgentTools:
         if missing:
             response += f"\n\nStill missing: {', '.join(missing)}"
 
-        return response
+        buttons = [[("Save", "save"), ("Enrich", "enrich_current"), ("Cancel", "cancel")]]
+        if not missing:
+            response += "\n\nLooks complete! Ready to save?"
+            buttons = [[("Save Now", "save"), ("Keep Editing", "dismiss")]]
+
+        return MessageResponse(text=response, buttons=buttons)
 
     async def update_contact(self, title: str = None, company: str = None,
                             email: str = None, phone: str = None, linkedin: str = None,
@@ -390,6 +396,16 @@ class AgentTools:
         # Format response
         update_parts = [f"{k}='{v}'" for k, v in updates.items()]
         logger.info(f"[TOOL] update_contact: {target_name} -> {update_parts}")
+
+        # Check if contact looks complete enough to suggest saving
+        updated_pending = self.memory.get_pending_contact(self.user_id)
+        if updated_pending:
+            missing = contact_missing_fields(updated_pending)
+            if len(missing) == 0:
+                return MessageResponse(
+                    text=f"Updated {target_name}: {', '.join(update_parts)}\n\nLooking good! All key fields filled.",
+                    buttons=[[("Save Now", "save"), ("Keep Editing", "dismiss")]]
+                )
 
         return f"Updated {target_name}: {', '.join(update_parts)}"
 
@@ -461,12 +477,37 @@ class AgentTools:
                 except Exception as e:
                     logger.warning(f"[TOOL] Auto-enrichment trigger failed: {e}")
             
-            return f"Saved {saved_name} to your network! ✅ Enriching in background...\n\n{format_contact_card(saved_contact)}"
+            return MessageResponse(
+                text=f"Saved {saved_name} to your network! ✅ Enriching in background...\n\n{format_contact_card(saved_contact)}",
+                buttons=[[("Enrich", f"enrich:{saved_name}"), ("Add Another", "add_new")]]
+            )
 
         # Return actual error message if available
         if error_msg:
             return f"⚠️ {error_msg}"
         return f"Failed to save {pending.name}. Please try again."
+
+    async def undo_last_save(self) -> str:
+        """Delete the last saved contact (undo)."""
+        last = _user_last_contact.get(self.user_id)
+        if not last:
+            return "Nothing to undo."
+
+        try:
+            sheets = get_sheets_service()
+            sheets._ensure_initialized()
+            success = sheets.delete_contact(last)
+            if success:
+                _user_last_contact.pop(self.user_id, None)
+                logger.info(f"[TOOL] undo_last_save: Deleted '{last}'")
+                return MessageResponse(
+                    text=f"Removed **{last}** from your network.",
+                    buttons=[[("Re-add", f"readd:{last}"), ("Done", "dismiss")]]
+                )
+        except Exception as e:
+            logger.error(f"Undo failed: {e}")
+
+        return f"Could not undo. '{last}' may have already been modified."
 
     async def search_web(self, query: str) -> str:
         """Search the web for information about a company or person."""
@@ -1756,6 +1797,7 @@ Provide a brief, informative summary suitable for a contact profile."""
             'enrich_contact': self.enrich_contact,
             'deep_research': self.deep_research,
             'get_draft_status': self.get_draft_status,
+            'undo_last_save': self.undo_last_save,
             # V3 Phase 1 Tools
             'log_interaction': self.log_interaction,
             'set_follow_up': self.set_follow_up,

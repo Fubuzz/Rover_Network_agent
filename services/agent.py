@@ -12,6 +12,7 @@ from openai import OpenAI
 
 from config import APIConfig, AIConfig
 from services.contact_memory import get_memory_service, ConversationState
+from services.message_response import MessageResponse
 from services.agent_tools import (
     AgentTools, _user_search_results, _user_summaries,
     _user_last_contact, _user_last_action, _user_search_query,
@@ -187,6 +188,14 @@ AGENT_TOOLS = [
                     "name": {"type": "string", "description": "Name of the contact to enrich (optional - uses current contact if not specified)"}
                 }
             }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "undo_last_save",
+            "description": "Undo the last saved contact — deletes it from the database. Use when user says '/undo' or 'undo last save'.",
+            "parameters": {"type": "object", "properties": {}}
         }
     },
     # V3 New Tools - Relationship Intelligence
@@ -504,7 +513,7 @@ class RoverAgent:
             self._client = OpenAI(api_key=APIConfig.OPENAI_API_KEY)
         return self._client
 
-    async def process(self, user_message: str) -> str:
+    async def process(self, user_message: str) -> MessageResponse:
         """
         Main agent loop - reason and act until the task is complete.
 
@@ -512,12 +521,12 @@ class RoverAgent:
             user_message: The user's message to process
 
         Returns:
-            The agent's final response to the user
+            MessageResponse with text + optional buttons
         """
         from services.conversation_store import get_conversation_store
-        
+
         logger.info(f"[AGENT] Processing: '{user_message}'")
-        
+
         # Store user message in conversation history
         conversation_store = get_conversation_store()
         conversation_store.add_message(self.user_id, "user", user_message)
@@ -529,6 +538,9 @@ class RoverAgent:
             {"role": "user", "content": user_message}
         ]
 
+        # Track the last MessageResponse from a tool (preserves buttons)
+        last_message_response: MessageResponse | None = None
+
         # Agent loop - reason and act
         for iteration in range(self.max_iterations):
             logger.info(f"[AGENT] Iteration {iteration + 1}")
@@ -537,19 +549,23 @@ class RoverAgent:
                 response = self._call_llm()
             except Exception as e:
                 logger.error(f"[AGENT] LLM call error: {e}")
-                return f"Sorry, I had trouble processing that. Please try again."
+                return MessageResponse.plain("Sorry, I had trouble processing that. Please try again.")
 
             message = response.choices[0].message
 
             # If no tool calls, we're done - return the response
             if not message.tool_calls:
-                final_response = message.content or "Done!"
-                logger.info(f"[AGENT] Final response: {final_response[:100]}...")
-                
+                final_text = message.content or "Done!"
+                logger.info(f"[AGENT] Final response: {final_text[:100]}...")
+
                 # Store assistant response in conversation history
-                conversation_store.add_message(self.user_id, "assistant", final_response)
-                
-                return final_response
+                conversation_store.add_message(self.user_id, "assistant", final_text)
+
+                # If the last tool returned a MessageResponse with buttons,
+                # attach those buttons to the LLM's final text
+                if last_message_response and last_message_response.buttons:
+                    return MessageResponse(text=final_text, buttons=last_message_response.buttons)
+                return MessageResponse.plain(final_text)
 
             # Add assistant message with tool calls to history
             self.messages.append({
@@ -581,23 +597,30 @@ class RoverAgent:
                 # Execute the tool
                 result = await self.tools.execute(tool_name, arguments)
 
-                logger.info(f"[AGENT] Tool result: {result[:100]}...")
+                # Preserve MessageResponse if tool returned one
+                if isinstance(result, MessageResponse):
+                    last_message_response = result
+                    result_text = result.text
+                else:
+                    result_text = result
 
-                # Add tool result to messages
+                logger.info(f"[AGENT] Tool result: {result_text[:100]}...")
+
+                # Add tool result to messages (LLM only sees text)
                 self.messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
-                    "content": result
+                    "content": result_text
                 })
 
         # Max iterations reached
         logger.warning("[AGENT] Max iterations reached")
-        final_response = "I've completed the task. Let me know if you need anything else!"
-        
+        final_text = "I've completed the task. Let me know if you need anything else!"
+
         # Store assistant response in conversation history
-        conversation_store.add_message(self.user_id, "assistant", final_response)
-        
-        return final_response
+        conversation_store.add_message(self.user_id, "assistant", final_text)
+
+        return MessageResponse.plain(final_text)
 
     def _call_llm(self):
         """Call the OpenAI API with function calling."""

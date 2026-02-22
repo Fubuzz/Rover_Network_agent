@@ -7,8 +7,10 @@ from telegram.ext import ContextTypes, CommandHandler
 
 from services.ai_service import get_ai_service
 from services.airtable_service import get_sheets_service
+from services.message_response import MessageResponse
 from utils.constants import MESSAGES, COMMANDS
 from analytics.tracker import get_tracker
+from handlers.conversation_engine import process_message
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -280,6 +282,34 @@ Recent contacts (sample):
         await update.message.reply_text(f"My brain short-circuited. 🧠💥\n\n_{str(e)}_", parse_mode="Markdown")
 
 
+async def undo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /undo command to undo the last saved contact."""
+    import re
+    from telegram.error import BadRequest
+    from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+
+    user_id = str(update.effective_user.id)
+    response = await process_message(user_id, "/undo")
+
+    if isinstance(response, MessageResponse) and response.buttons:
+        keyboard = []
+        for row in response.buttons:
+            keyboard.append([InlineKeyboardButton(label, callback_data=data) for label, data in row])
+        markup = InlineKeyboardMarkup(keyboard)
+        try:
+            await update.message.reply_text(response.text, parse_mode="Markdown", reply_markup=markup)
+        except BadRequest:
+            plain = re.sub(r'[*_`\[\]]', '', response.text)
+            await update.message.reply_text(plain, reply_markup=markup)
+    else:
+        text = response.text if isinstance(response, MessageResponse) else response
+        try:
+            await update.message.reply_text(text, parse_mode="Markdown")
+        except BadRequest:
+            plain = re.sub(r'[*_`\[\]]', '', text)
+            await update.message.reply_text(plain)
+
+
 def get_conversation_handlers():
     """Get all conversation-related handlers."""
     return [
@@ -289,4 +319,5 @@ def get_conversation_handlers():
         CommandHandler("note", note_command),
         CommandHandler("tag", tag_command),
         CommandHandler("ask", ask_command),
+        CommandHandler("undo", undo_command),
     ]

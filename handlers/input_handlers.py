@@ -3,14 +3,16 @@ Telegram handlers for voice, image, and text input processing.
 Uses the AI-powered conversation engine for all text interactions.
 """
 
+import asyncio
 import logging
 import re
-from telegram import Update
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.error import BadRequest
 from telegram.ext import ContextTypes, MessageHandler, filters
 
 from services.ai_service import get_ai_service
 from services.contact_memory import get_memory_service
+from services.message_response import MessageResponse
 from analytics.tracker import get_tracker
 from data.schema import OperationType
 from config import FeatureFlags
@@ -20,14 +22,35 @@ logger = logging.getLogger('network_agent')
 
 
 # ============================================================
+# DEBOUNCE STATE — per-user message batching
+# ============================================================
+
+_pending_messages: dict[str, list[str]] = {}   # user_id -> [messages]
+_pending_tasks: dict[str, asyncio.Task] = {}    # user_id -> delayed task
+_pending_updates: dict[str, Update] = {}        # user_id -> last Update (for reply)
+_pending_contexts: dict[str, ContextTypes.DEFAULT_TYPE] = {}  # user_id -> last context
+DEBOUNCE_SECONDS = 1.5
+
+
+# ============================================================
 # SAFE MESSAGE SENDING
 # ============================================================
 
-async def safe_reply(message, text: str):
+def _build_keyboard(buttons):
+    """Build InlineKeyboardMarkup from button list."""
+    if not buttons:
+        return None
+    keyboard = []
+    for row in buttons:
+        keyboard.append([InlineKeyboardButton(label, callback_data=data) for label, data in row])
+    return InlineKeyboardMarkup(keyboard)
+
+
+async def safe_reply(message, text: str, reply_markup=None):
     """Send reply, falling back to plain text if Markdown fails."""
     try:
         # First try with Markdown
-        await message.reply_text(text, parse_mode="Markdown")
+        await message.reply_text(text, parse_mode="Markdown", reply_markup=reply_markup)
     except BadRequest as e:
         if "parse entities" in str(e).lower() or "can't find end" in str(e).lower():
             # Markdown parsing failed - try HTML mode
@@ -40,12 +63,12 @@ async def safe_reply(message, text: str):
                 # Italic: _text_ -> <i>text</i> (but not underscores in emails)
                 # Only convert if surrounded by spaces or start/end
                 html_text = re.sub(r'(?<![a-zA-Z0-9])_([^_]+?)_(?![a-zA-Z0-9])', r'<i>\1</i>', html_text)
-                await message.reply_text(html_text, parse_mode="HTML")
+                await message.reply_text(html_text, parse_mode="HTML", reply_markup=reply_markup)
             except BadRequest:
                 # HTML also failed - send plain text
                 # Strip markdown characters
                 plain_text = re.sub(r'[*_`\[\]]', '', text)
-                await message.reply_text(plain_text)
+                await message.reply_text(plain_text, reply_markup=reply_markup)
         else:
             raise
 
@@ -99,7 +122,11 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
         # Process the transcript through the conversation engine
         response = await process_message(user_id, transcript)
 
-        await safe_reply(update.message, response)
+        if isinstance(response, MessageResponse):
+            markup = _build_keyboard(response.buttons)
+            await safe_reply(update.message, response.text, reply_markup=markup)
+        else:
+            await safe_reply(update.message, response)
         tracker.end_operation(success=True)
         
     except Exception as e:
@@ -206,7 +233,11 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
                 if text_repr.strip():
                     response = await process_message(user_id, text_repr.strip())
-                    await safe_reply(update.message, response)
+                    if isinstance(response, MessageResponse):
+                        markup = _build_keyboard(response.buttons)
+                        await safe_reply(update.message, response.text, reply_markup=markup)
+                    else:
+                        await safe_reply(update.message, response)
                 else:
                     await safe_reply(
                         update.message,
@@ -229,7 +260,11 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
             text_repr += f", phone: {extracted['phone']}"
 
         response = await process_message(user_id, text_repr)
-        await safe_reply(update.message, response)
+        if isinstance(response, MessageResponse):
+            markup = _build_keyboard(response.buttons)
+            await safe_reply(update.message, response.text, reply_markup=markup)
+        else:
+            await safe_reply(update.message, response)
 
         tracker.end_operation(success=True)
 
@@ -323,41 +358,123 @@ async def handle_document_message(update: Update, context: ContextTypes.DEFAULT_
 
 
 # ============================================================
-# TEXT MESSAGE HANDLER - Main entry point
+# ENRICHMENT KEYWORD DETECTION
+# ============================================================
+
+_ENRICH_PREFIXES = ("enrich", "research", "look up")
+
+
+def _is_enrichment_request(text: str) -> bool:
+    """Check if the message is an enrichment/research request."""
+    text_lower = text.lower().strip()
+    return any(text_lower.startswith(p) for p in _ENRICH_PREFIXES)
+
+
+# ============================================================
+# TEXT MESSAGE HANDLER - Main entry point (with debounce + progress)
 # ============================================================
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Handle regular text messages using the AI-powered conversation engine.
-    This is the main handler for all text interactions.
+    Includes debounce (batches rapid messages) and progress indicator for enrichment.
     """
     # Skip if it's a command
     if update.message.text.startswith('/'):
         return
-    
-    tracker = get_tracker()
+
     user_id = str(update.effective_user.id)
     text = update.message.text.strip()
-    
-    # Track the operation
+
+    # --- Debounce: accumulate rapid messages ---
+    _pending_messages.setdefault(user_id, []).append(text)
+    _pending_updates[user_id] = update
+    _pending_contexts[user_id] = context
+
+    # Cancel any existing timer for this user
+    existing_task = _pending_tasks.get(user_id)
+    if existing_task and not existing_task.done():
+        existing_task.cancel()
+
+    # Schedule flush after DEBOUNCE_SECONDS
+    _pending_tasks[user_id] = asyncio.create_task(_flush_after_delay(user_id))
+
+
+async def _flush_after_delay(user_id: str):
+    """Wait for debounce period, then flush accumulated messages."""
+    try:
+        await asyncio.sleep(DEBOUNCE_SECONDS)
+    except asyncio.CancelledError:
+        return  # A newer message arrived, so this timer was superseded
+
+    await _flush_messages(user_id)
+
+
+async def _flush_messages(user_id: str):
+    """Combine pending messages and process them."""
+    messages = _pending_messages.pop(user_id, [])
+    update = _pending_updates.pop(user_id, None)
+    _pending_contexts.pop(user_id, None)
+    _pending_tasks.pop(user_id, None)
+
+    if not messages or not update:
+        return
+
+    # Combine multiple rapid messages into one
+    combined = "\n".join(messages)
+
+    tracker = get_tracker()
     tracker.start_operation(
         operation_type=OperationType.ADD_CONTACT.value,
         user_id=user_id,
         command="text_message"
     )
-    
+
     try:
-        # Use the AI-powered conversation engine
-        response = await process_message(user_id, text)
-        await safe_reply(update.message, response)
+        # --- Progress indicator for enrichment ---
+        status_msg = None
+        if _is_enrichment_request(combined):
+            try:
+                status_msg = await update.message.reply_text(
+                    "Researching... this may take a moment."
+                )
+            except Exception:
+                pass
+
+        # Process through conversation engine
+        response = await process_message(user_id, combined)
+
+        # Build reply
+        if isinstance(response, MessageResponse):
+            resp_text = response.text
+            markup = _build_keyboard(response.buttons)
+        else:
+            resp_text = response
+            markup = None
+
+        # If we sent a progress placeholder, edit it; otherwise send new message
+        if status_msg:
+            try:
+                await status_msg.edit_text(
+                    resp_text, parse_mode="Markdown", reply_markup=markup
+                )
+            except BadRequest:
+                # Edit failed (e.g. text unchanged) — fall back to new message
+                await safe_reply(update.message, resp_text, reply_markup=markup)
+        else:
+            await safe_reply(update.message, resp_text, reply_markup=markup)
+
         tracker.end_operation(success=True)
 
     except Exception as e:
-        print(f"Conversation engine error: {e}")
+        logger.error(f"Conversation engine error: {e}")
         import traceback
         traceback.print_exc()
         tracker.end_operation(success=False, error_message=str(e))
-        await update.message.reply_text(f"Something went wrong: {str(e)}")
+        try:
+            await update.message.reply_text(f"Something went wrong: {str(e)}")
+        except Exception:
+            pass
 
 
 # ============================================================

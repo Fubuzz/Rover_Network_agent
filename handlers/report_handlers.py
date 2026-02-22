@@ -86,6 +86,38 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             intro = "Time for the numbers. _I love a good stat._ 📊\n\n"
             formatted = format_statistics(stats)
+
+            # --- Enhanced sections ---
+            # Contacts added this week
+            try:
+                from datetime import datetime, timedelta
+                week_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+                all_contacts = sheets.get_all_contacts()
+                recent = [c for c in all_contacts if getattr(c, 'created_date', '') and getattr(c, 'created_date', '') >= week_ago]
+                formatted += f"\n\n📅 **This week:** {len(recent)} new contacts"
+            except Exception:
+                pass
+
+            # Pending follow-ups
+            try:
+                from services.interaction_tracker import get_interaction_tracker
+                tracker_svc = get_interaction_tracker()
+                overdue = tracker_svc.get_contacts_needing_follow_up(user_id)
+                if overdue:
+                    formatted += f"\n⏰ **Overdue follow-ups:** {len(overdue)}"
+                    for contact in overdue[:3]:
+                        name = contact.name if hasattr(contact, 'name') else str(contact)
+                        formatted += f"\n  • {name}"
+                    if len(overdue) > 3:
+                        formatted += f"\n  _...and {len(overdue) - 3} more_"
+            except Exception:
+                pass
+
+            # Stale relationships (no interaction in 30+ days)
+            stale_count = stats.get('stale_contacts', 0)
+            if stale_count:
+                formatted += f"\n🕸️ **Stale (30+ days):** {stale_count} contacts"
+
             await safe_reply(update.message, intro + formatted)
 
         tracker.end_operation(success=True)

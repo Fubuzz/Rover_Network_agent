@@ -18,6 +18,7 @@ from crews.researcher_crew import get_researcher_crew
 from handlers.enrichment_handlers import format_enrichment_result
 from data.schema import Contact
 from utils.text_cleaner import sanitize_input
+from services.message_response import MessageResponse
 
 
 # ============================================================
@@ -636,12 +637,15 @@ async def handle_finish(user_id: str) -> str:
 
         # Check if contact could benefit from enrichment
         offer_enrichment = _should_offer_enrichment(pending)
+        saved_name = pending.name
+
         if offer_enrichment:
             response += "\n\n_Would you like me to **enrich** this contact?_"
             response += f"\nI can look up: LinkedIn profile, company details, industry info, and more."
-            response += f"\n\nJust say _'enrich'_ or _'/enrich {pending.name}'_"
+            buttons = [[("Enrich", f"enrich:{saved_name}"), ("Add Another", "add_new")]]
         else:
             response += "\n\n_Session cleared. Ready for the next one!_ 😉"
+            buttons = [[("Add Another", "add_new"), ("View", f"view:{saved_name}")]]
 
         # CRITICAL: Hard reset clears ALL context and LOCKS the saved contact
         # This prevents the "zombie context" bug where old contact data leaks to new contacts
@@ -650,7 +654,7 @@ async def handle_finish(user_id: str) -> str:
         # Store last saved contact name for potential enrichment
         memory.set_last_saved_contact(user_id, pending.name, pending.company)
 
-        return response
+        return MessageResponse(text=response, buttons=buttons)
     else:
         return (
             f"Hmm, couldn't save **{pending.name}**. 😬\n\n"
@@ -700,15 +704,18 @@ async def handle_cancel(user_id: str) -> str:
         f"Poof! **{name}** is gone. 💨",
     ]
 
-    return random.choice(responses) + "\n\n_Ready for your next contact._"
+    return MessageResponse(
+        text=random.choice(responses) + "\n\n_Ready for your next contact._",
+        buttons=[[("Add New", "add_new")]]
+    )
 
 
 async def handle_greeting(user_id: str) -> str:
-    """Handle greetings."""
+    """Handle greetings with contextual network info."""
     memory = get_memory_service()
     current = memory.get_current_contact(user_id) or memory.get_pending_contact(user_id)
 
-    # Time-aware greetings
+    # Time-aware greeting
     from datetime import datetime
     hour = datetime.now().hour
     if hour < 12:
@@ -718,19 +725,33 @@ async def handle_greeting(user_id: str) -> str:
     else:
         time_greeting = "Good evening"
 
-    greetings = [
-        f"{time_greeting}! How can I help you manage your network today?",
-        f"{time_greeting}! Ready to add or look up some contacts?",
-        "Hello! I'm here to help with your professional network.",
-        "Hey there! What can I do for you today?",
-        "Hi! Need to add a contact or look someone up?",
-    ]
-    response = random.choice(greetings)
+    # Add context: total contacts + overdue follow-ups
+    total = 0
+    overdue_count = 0
+    try:
+        sheets = get_sheets_service()
+        stats = sheets.get_contact_stats()
+        total = stats.get('total', 0)
+
+        from services.interaction_tracker import get_interaction_tracker
+        tracker = get_interaction_tracker()
+        overdue = tracker.get_contacts_needing_follow_up(user_id)
+        overdue_count = len(overdue) if overdue else 0
+    except Exception:
+        pass
+
+    greeting = f"{time_greeting}! "
+    if overdue_count > 0:
+        greeting += f"You have **{overdue_count}** overdue follow-up{'s' if overdue_count != 1 else ''}. "
+    if total > 0:
+        greeting += f"Your network has **{total}** contacts."
+    else:
+        greeting += "Ready to build your network?"
 
     if current:
-        response += f"\n\n_Currently working on **{current.name}**. Say 'done' to save or keep adding info._"
+        greeting += f"\n\n_Currently working on **{current.name}**. Say 'done' to save or keep adding info._"
 
-    return response
+    return greeting
 
 
 async def handle_thanks() -> str:
@@ -1481,10 +1502,11 @@ def should_override_to_update(message: str, result: ConversationResult, state: C
 # MAIN CONVERSATION HANDLER
 # ============================================================
 
-async def process_message(user_id: str, message: str) -> str:
+async def process_message(user_id: str, message: str) -> MessageResponse:
     """
     Main entry point for processing user messages.
     Uses the new agentic architecture with OpenAI function calling.
+    Returns MessageResponse (text + optional buttons).
     """
     import logging
     logger = logging.getLogger('network_agent')
@@ -1492,7 +1514,7 @@ async def process_message(user_id: str, message: str) -> str:
     # Sanitize input for security (XSS, injection, length limits)
     message = sanitize_input(message)
     if not message:
-        return "I didn't catch that. Could you try again?"
+        return MessageResponse.plain("I didn't catch that. Could you try again?")
 
     try:
         # Use the new agent-based architecture
@@ -1500,9 +1522,12 @@ async def process_message(user_id: str, message: str) -> str:
 
         logger.info(f"[AGENT] Processing message from user {user_id}: {message[:50]}...")
         response = await process_with_agent(user_id, message)
-        logger.info(f"[AGENT] Response: {response[:100]}...")
+        logger.info(f"[AGENT] Response: {(response.text if isinstance(response, MessageResponse) else response)[:100]}...")
 
-        return response
+        # Ensure we always return MessageResponse
+        if isinstance(response, MessageResponse):
+            return response
+        return MessageResponse.plain(response)
 
     except Exception as e:
         logger.warning(f"[AGENT] Agent failed, falling back to legacy system: {e}")
@@ -1511,28 +1536,35 @@ async def process_message(user_id: str, message: str) -> str:
         return await process_message_legacy(user_id, message)
 
 
-async def process_message_legacy(user_id: str, message: str) -> str:
+async def process_message_legacy(user_id: str, message: str) -> MessageResponse:
     """
     Legacy message processing using intent classification.
     Kept as fallback if the agent fails.
+    Returns MessageResponse for consistency.
     """
     memory = get_memory_service()
     msg_lower = message.lower().strip()
 
+    def _wrap(result):
+        """Ensure legacy handler result is MessageResponse."""
+        if isinstance(result, MessageResponse):
+            return result
+        return MessageResponse.plain(result)
+
     # FIX 3: RECALL LAST - Check if user is trying to add info to last saved contact
     recall_result = _check_recall_last_saved(memory, user_id, msg_lower)
     if recall_result:
-        return recall_result
+        return _wrap(recall_result)
     if msg_lower.startswith("enrich") or msg_lower == "yes enrich" or msg_lower == "yes please enrich":
         # Check if there's a last saved contact to enrich
         last_saved = memory.get_last_saved_contact(user_id)
         if last_saved and last_saved[0]:
-            return await handle_enrich_request(user_id, last_saved[0], last_saved[1])
+            return _wrap(await handle_enrich_request(user_id, last_saved[0], last_saved[1]))
         # Otherwise, let the enrichment handler parse the name
         elif msg_lower.startswith("enrich "):
             name_to_enrich = message[7:].strip()  # Remove "enrich "
             if name_to_enrich:
-                return await handle_enrich_request(user_id, name_to_enrich, None)
+                return _wrap(await handle_enrich_request(user_id, name_to_enrich, None))
 
     # Get context for AI (now includes state)
     current_contact, recent_names, state = memory.get_context_for_ai(user_id)
@@ -1571,46 +1603,46 @@ async def process_message_legacy(user_id: str, message: str) -> str:
 
     # Route to appropriate handler
     if result.intent == Intent.ADD_CONTACT:
-        return await handle_add_contact(user_id, result)
+        return _wrap(await handle_add_contact(user_id, result))
 
     elif result.intent == Intent.UPDATE_CONTACT:
-        return await handle_update_contact(user_id, result)
+        return _wrap(await handle_update_contact(user_id, result))
 
     elif result.intent == Intent.QUERY:
-        return await handle_query(user_id, result)
+        return _wrap(await handle_query(user_id, result))
 
     elif result.intent == Intent.VIEW:
-        return await handle_view(user_id, result)
+        return _wrap(await handle_view(user_id, result))
 
     elif result.intent == Intent.FINISH:
-        return await handle_finish(user_id)
+        return _wrap(await handle_finish(user_id))
 
     elif result.intent == Intent.CANCEL:
-        return await handle_cancel(user_id)
+        return _wrap(await handle_cancel(user_id))
 
     elif result.intent == Intent.SEARCH:
-        return await handle_search(user_id, result, message)
+        return _wrap(await handle_search(user_id, result, message))
 
     elif result.intent == Intent.GREETING:
-        return await handle_greeting(user_id)
+        return _wrap(await handle_greeting(user_id))
 
     elif result.intent == Intent.THANKS:
-        return await handle_thanks()
+        return _wrap(await handle_thanks())
 
     elif result.intent == Intent.HELP:
-        return await handle_help()
+        return _wrap(await handle_help())
 
     elif result.intent == Intent.CONFIRM:
-        return await handle_confirm(user_id, result)
+        return _wrap(await handle_confirm(user_id, result))
 
     elif result.intent == Intent.DENY:
-        return await handle_deny(user_id, result)
+        return _wrap(await handle_deny(user_id, result))
 
     elif result.intent == Intent.SUMMARIZE:
-        return await handle_summarize(user_id, result)
+        return _wrap(await handle_summarize(user_id, result))
 
     elif result.intent == Intent.GENERAL_REQUEST:
-        return await handle_general_request(user_id, result, message)
+        return _wrap(await handle_general_request(user_id, result, message))
 
     else:
-        return await handle_unknown(user_id, message)
+        return _wrap(await handle_unknown(user_id, message))
