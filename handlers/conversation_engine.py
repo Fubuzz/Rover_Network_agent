@@ -927,6 +927,10 @@ async def handle_search(user_id: str, result: ConversationResult, original_messa
 
             response += clean_result.strip()
 
+            # Store for later summarization
+            store_search_results(user_id, person_name or company_name or search_query,
+                                 [{'title': 'Search Result', 'snippet': clean_result.strip()}])
+
             # Extract LinkedIn URL if present
             linkedin_match = re.search(r'https?://(?:www\.)?linkedin\.com/in/[a-zA-Z0-9_-]+/?', clean_result)
             if linkedin_match and current:
@@ -1295,7 +1299,7 @@ async def handle_summarize(user_id: str, result: ConversationResult) -> str:
 Provide a brief, informative summary suitable for a contact management system."""
 
         # Get summary from AI
-        summary = ai.generate_text(summary_prompt)
+        summary = ai.generate_response(summary_prompt)
 
         response = f"📊 **Summary for {query}:**\n\n{summary}"
 

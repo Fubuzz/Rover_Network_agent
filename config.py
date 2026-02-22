@@ -193,14 +193,10 @@ class ContactClassification:
 
 def validate_all_configs() -> bool:
     """Validate all required configurations."""
-    try:
-        TelegramConfig.validate()
-        AirtableConfig.validate()
-        APIConfig.validate()
-        return True
-    except ValueError as e:
-        print(f"Configuration Error: {e}")
-        return False
+    TelegramConfig.validate()
+    AirtableConfig.validate()
+    APIConfig.validate()
+    return True
 
 
 def get_config_summary() -> dict:

@@ -8,6 +8,8 @@ import asyncio
 import sys
 from pathlib import Path
 
+import pytest
+
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -18,6 +20,7 @@ from services.conversation_ai import analyze_message, Intent
 from data.schema import Contact
 
 
+@pytest.mark.asyncio
 async def test_conversation():
     """Test the conversation AI with various scenarios."""
 
