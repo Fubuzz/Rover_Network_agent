@@ -224,12 +224,47 @@ async def _handle_single_enrichment(update: Update, crew, tracker, input_text: s
     response = f"**Enrichment Results**\n\n"
     response += format_enrichment_result(result)
 
-    # Auto-save enrichment data to Google Sheets
+    # Auto-save enrichment data to Google Sheets (using already-fetched result)
     saved = False
     if status in ["Enriched", "Partial"]:
         try:
-            save_result = crew.enrich_and_update_contact(name, company if company != "NA" else None)
-            saved = save_result.get("updated_in_db", False)
+            from services.airtable_service import get_sheets_service
+            sheets = get_sheets_service()
+            sheets._ensure_initialized()
+
+            # Map enrichment fields to sheet columns
+            field_mappings = {
+                "title": "title",
+                "contact_linkedin_url": "linkedin_url",
+                "company_linkedin_url": "linkedin_link",
+                "company_description": "company_description",
+                "industry": "industry",
+                "company_stage": "company_stage",
+                "funding_raised": "funding_raised",
+                "linkedin_summary": "linkedin_summary",
+                "contact_type": "contact_type",
+                "website": "website",
+                "address": "address",
+                "key_strengths": "key_strengths",
+                "founder_score": "founder_score",
+                "sector_fit": "sector_fit",
+                "company": "company",
+            }
+
+            updates = {}
+            for enrich_field, sheet_field in field_mappings.items():
+                value = result.get(enrich_field)
+                if value and value != "NA":
+                    updates[sheet_field] = value
+            if result.get("research_quality"):
+                updates["research_quality"] = result["research_quality"]
+            if result.get("researched_date"):
+                updates["researched_date"] = result["researched_date"]
+
+            if updates:
+                saved = sheets.update_contact(name, updates)
+                if not saved and " " in name:
+                    saved = sheets.update_contact(name.split()[0], updates)
         except Exception as e:
             print(f"Failed to save enrichment: {e}")
 

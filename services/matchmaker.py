@@ -20,6 +20,9 @@ from services.airtable_service import get_sheets_service
 class MatchmakerService:
     """Service for matching Founders with Investors."""
 
+    # Negation prefixes that invalidate a keyword match
+    _NEGATION_PREFIXES = ["no ", "not ", "non-", "lack of ", "without ", "unlikely "]
+
     def __init__(self):
         self.sheets_service = get_sheets_service()
         # Use gpt-4o-mini for faster matching with 128k context window
@@ -33,6 +36,21 @@ class MatchmakerService:
         """Get founders and investors from the contacts sheet."""
         return self.sheets_service.get_founders_and_investors()
 
+    @staticmethod
+    def _has_positive_keyword(text: str, keyword: str) -> bool:
+        """Check if keyword appears in text without being negated."""
+        idx = text.find(keyword)
+        if idx == -1:
+            return False
+        # Check if preceded by a negation
+        prefix = text[max(0, idx - 12):idx].lower()
+        negations = ["no ", "not ", "non-", "lack of ", "without ", "unlikely "]
+        return not any(prefix.endswith(neg) for neg in negations)
+
+    def _any_positive_keyword(self, text: str, keywords: list) -> bool:
+        """Check if any keyword matches positively (not negated) in text."""
+        return any(self._has_positive_keyword(text, kw) for kw in keywords)
+
     def calculate_match_score(
         self,
         founder: Dict[str, Any],
@@ -43,49 +61,50 @@ class MatchmakerService:
 
         Scoring is MORE LENIENT to catch good matches.
         Keywords checked in order of strength.
+        Negated keywords (e.g. "not strong") are excluded.
         """
         score = 0
 
         # Sector Fit (0-30 points) - More lenient keywords
         sector_fit = analysis.get("sector_fit", "").lower()
-        if any(kw in sector_fit for kw in ["strong", "exact", "direct", "perfect", "excellent", "high"]):
+        if self._any_positive_keyword(sector_fit, ["strong", "exact", "direct", "perfect", "excellent", "high"]):
             score += 30
-        elif any(kw in sector_fit for kw in ["partial", "adjacent", "related", "good", "moderate", "overlap"]):
+        elif self._any_positive_keyword(sector_fit, ["partial", "adjacent", "related", "good", "moderate", "overlap"]):
             score += 20
-        elif any(kw in sector_fit for kw in ["possible", "potential", "some", "limited", "tangential"]):
+        elif self._any_positive_keyword(sector_fit, ["possible", "potential", "some", "limited", "tangential"]):
             score += 10
         elif sector_fit and "weak" not in sector_fit and "none" not in sector_fit:
             score += 15  # Default non-negative response
 
         # Stage Alignment (0-25 points)
         stage_alignment = analysis.get("stage_alignment", "").lower()
-        if any(kw in stage_alignment for kw in ["exact", "perfect", "ideal", "match", "fits"]):
+        if self._any_positive_keyword(stage_alignment, ["exact", "perfect", "ideal", "match", "fits"]):
             score += 25
-        elif any(kw in stage_alignment for kw in ["typical", "within range", "close", "good", "appropriate"]):
+        elif self._any_positive_keyword(stage_alignment, ["typical", "within range", "close", "good", "appropriate"]):
             score += 20
-        elif any(kw in stage_alignment for kw in ["adjacent", "sometimes", "possible", "flexible"]):
+        elif self._any_positive_keyword(stage_alignment, ["adjacent", "sometimes", "possible", "flexible"]):
             score += 10
         elif stage_alignment and "outside" not in stage_alignment and "mismatch" not in stage_alignment:
             score += 12  # Default non-negative response
 
         # Geo Alignment (0-20 points)
         geo_alignment = analysis.get("geo_alignment", "").lower()
-        if any(kw in geo_alignment for kw in ["local", "same", "both", "shared"]):
+        if self._any_positive_keyword(geo_alignment, ["local", "same", "both", "shared"]):
             score += 20
-        elif any(kw in geo_alignment for kw in ["regional", "nearby", "close", "mena", "middle east"]):
+        elif self._any_positive_keyword(geo_alignment, ["regional", "nearby", "close", "mena", "middle east"]):
             score += 15
-        elif any(kw in geo_alignment for kw in ["remote", "global", "international", "flexible"]):
+        elif self._any_positive_keyword(geo_alignment, ["remote", "global", "international", "flexible"]):
             score += 10
         elif geo_alignment and "no " not in geo_alignment:
             score += 8  # Default
 
         # Thesis Alignment (0-25 points)
         thesis_alignment = analysis.get("thesis_alignment", "").lower()
-        if any(kw in thesis_alignment for kw in ["strong", "direct", "perfect", "excellent", "high"]):
+        if self._any_positive_keyword(thesis_alignment, ["strong", "direct", "perfect", "excellent", "high"]):
             score += 25
-        elif any(kw in thesis_alignment for kw in ["partial", "related", "good", "moderate", "aligned"]):
+        elif self._any_positive_keyword(thesis_alignment, ["partial", "related", "good", "moderate", "aligned"]):
             score += 15
-        elif any(kw in thesis_alignment for kw in ["tangential", "indirect", "possible", "potential"]):
+        elif self._any_positive_keyword(thesis_alignment, ["tangential", "indirect", "possible", "potential"]):
             score += 8
         elif thesis_alignment and "weak" not in thesis_alignment and "none" not in thesis_alignment:
             score += 10  # Default

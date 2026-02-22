@@ -245,10 +245,10 @@ class OutreachService:
             # QUALITY CHECK: Reject bad LLM output
             # ========================================
             is_bad_output = (
-                "Network Nurturing Agent" in polished or
-                "Hi," in polished and recipient_first_name not in polished or
-                founder_name not in polished or
-                len(polished) < 50
+                "Network Nurturing Agent" in polished
+                or ("Hi," in polished and recipient_first_name not in polished)
+                or founder_name not in polished
+                or len(polished) < 50
             )
 
             if is_bad_output:

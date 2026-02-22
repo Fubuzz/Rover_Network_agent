@@ -228,7 +228,22 @@ class AIResearchSynthesizer:
         """
         Use AI to enrich a ResearchResult with synthesized data.
         """
-        name = result.search_query.split()[0] if result.search_query else "Unknown"
+        # Extract full name from search query (query is "Name Company" format)
+        if result.person and result.person.full_name:
+            name = result.person.full_name
+        elif result.search_query:
+            # search_query is "Name Company" — extract the name portion
+            # If we know the company, strip it from the query to get the name
+            query = result.search_query
+            if result.company and result.company.name:
+                name = query.replace(result.company.name, "").strip()
+            elif result.person and result.person.current_company:
+                name = query.replace(result.person.current_company, "").strip()
+            else:
+                name = query
+            name = name if name else "Unknown"
+        else:
+            name = "Unknown"
         company = None
         if result.person and result.person.current_company:
             company = result.person.current_company

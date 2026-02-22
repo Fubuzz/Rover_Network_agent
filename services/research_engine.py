@@ -41,19 +41,22 @@ class SearchStrategy:
     def __init__(self, tavily_client, ai_service):
         self.tavily = tavily_client
         self.ai = ai_service
-    
+        self._last_results: List[Dict] = []
+
     def search(self, query: str, max_results: int = 10) -> List[Dict]:
         """Execute search and return raw results."""
         if not self.tavily:
             return []
-        
+
         try:
             response = self.tavily.search(
                 query=query,
                 max_results=max_results,
                 include_answer=False
             )
-            return response.get("results", [])
+            results = response.get("results", [])
+            self._last_results.extend(results)
+            return results
         except Exception as e:
             logger.error(f"Search error for '{query}': {e}")
             return []
@@ -753,7 +756,12 @@ class DeepResearchEngine:
         # 3.5. GPT Validation — verify we found the RIGHT person
         logger.info("Phase 3.5: GPT validation of results...")
         self._gpt_validate(result, request)
-        
+
+        # Collect raw search results for AI synthesis
+        result.raw_search_results.extend(linkedin_strategy._last_results)
+        result.raw_search_results.extend(person_strategy._last_results)
+        result.raw_search_results.extend(company_strategy._last_results)
+
         # 4. Cross-validate and enrich
         logger.info("Phase 4: Cross-validation and enrichment...")
         self._cross_validate(result)

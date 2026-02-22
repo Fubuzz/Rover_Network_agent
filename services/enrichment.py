@@ -62,6 +62,8 @@ class EnrichmentService:
         self.api_key = APIConfig.TAVILY_API_KEY
         self._ai_service = None
         self._api_valid = None  # Track if API key is valid
+        self._api_invalid_since = None  # Timestamp when API was marked invalid
+        self._api_retry_cooldown = 300  # Retry after 5 minutes
         self._last_error = None
         self._tavily_client = None
 
@@ -84,7 +86,7 @@ class EnrichmentService:
                 logger.error(f"Failed to initialize Tavily client: {e}")
         return self._tavily_client
 
-    @retry_with_backoff(max_retries=3, backoff_factor=2.0, exceptions=(ConnectionError, TimeoutError, Exception))
+    @retry_with_backoff(max_retries=3, backoff_factor=2.0, exceptions=(ConnectionError, TimeoutError))
     def _search(self, query: str, num_results: int = 10) -> List[Dict]:
         """Perform a web search using Tavily with automatic retry on failure."""
         if not self.api_key:
@@ -92,9 +94,15 @@ class EnrichmentService:
             self._last_error = "API key not configured"
             return []
 
-        # Skip if we already know the API key is invalid
+        # Skip if API key is invalid, but allow retry after cooldown
         if self._api_valid is False:
-            return []
+            import time
+            if (self._api_invalid_since and
+                    time.time() - self._api_invalid_since < self._api_retry_cooldown):
+                return []
+            # Cooldown expired, allow retry
+            logger.info("API key cooldown expired, retrying...")
+            self._api_valid = None
 
         if not self.tavily_client:
             self._last_error = "Tavily client not initialized"
@@ -109,6 +117,7 @@ class EnrichmentService:
 
             results = response.get("results", [])
             self._api_valid = True
+            self._api_invalid_since = None
 
             logger.info(f"Tavily search '{query}' returned {len(results)} results")
 
@@ -123,12 +132,16 @@ class EnrichmentService:
             ]
 
         except Exception as e:
+            import time
             error_msg = str(e)
             logger.error(f"Tavily search error: {error_msg}")
             self._last_error = error_msg
             if "Invalid API key" in error_msg or "401" in error_msg:
                 self._api_valid = False
-            return []
+                self._api_invalid_since = time.time()
+                return []
+            # Re-raise non-auth errors so @retry_with_backoff can retry them
+            raise
 
     def get_last_error(self) -> Optional[str]:
         """Get the last error message from Tavily."""
@@ -722,7 +735,7 @@ class EnrichmentService:
     def _calculate_enrichment_quality(self, result: Dict[str, Any]):
         """Calculate research quality and status based on filled fields."""
         # Count non-NA fields
-        key_fields = ["full_name", "company", "title", "linkedin_url",
+        key_fields = ["full_name", "company", "title", "contact_linkedin_url",
                       "company_description", "industry", "contact_type"]
         filled_key_fields = sum(1 for f in key_fields if result.get(f, "NA") != "NA")
 
