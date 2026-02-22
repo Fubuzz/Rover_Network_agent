@@ -2,8 +2,11 @@
 Message formatting utilities for Telegram output.
 """
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TYPE_CHECKING
 from datetime import datetime
+
+if TYPE_CHECKING:
+    from data.schema import Contact
 
 
 def format_contact_card(contact: Dict) -> str:
@@ -319,3 +322,67 @@ def truncate_text(text: str, max_length: int = 100) -> str:
     if len(text) <= max_length:
         return text
     return text[:max_length - 3] + "..."
+
+
+def contact_draft_card(contact: "Contact") -> str:
+    """Format a Contact being edited as a draft display card."""
+    from data.schema import Contact  # noqa: F811 — runtime import to avoid circular
+
+    lines = []
+
+    name = contact.name
+    if name:
+        lines.append(f"**{name}**")
+
+    title = contact.title
+    company = contact.company
+    if title and company:
+        lines.append(f"_{title} at {company}_")
+    elif title:
+        lines.append(f"_{title}_")
+    elif company:
+        lines.append(f"_at {company}_")
+
+    lines.append("")
+
+    if contact.email:
+        lines.append(f"📧 {contact.email}")
+    if contact.phone:
+        lines.append(f"📱 {contact.phone}")
+    if contact.linkedin_url:
+        lines.append(f"🔗 {contact.linkedin_url}")
+    if contact.address:
+        lines.append(f"📍 {contact.address}")
+    if contact.industry:
+        lines.append(f"🏢 {contact.industry}")
+    if contact.contact_type:
+        lines.append(f"👤 {contact.contact_type}")
+    if contact.company_description:
+        desc = contact.company_description
+        if len(desc) > 100:
+            desc = desc[:100] + "..."
+        lines.append(f"📄 {desc}")
+
+    research_summary = getattr(contact, 'research_summary', None)
+    if research_summary:
+        lines.append("")
+        summary = research_summary
+        if len(summary) > 200:
+            summary = summary[:200] + "..."
+        lines.append(f"**Summary:** {summary}")
+
+    return "\n".join(lines)
+
+
+def contact_missing_fields(contact: "Contact") -> list:
+    """Get list of empty important fields on a Contact."""
+    missing = []
+    if not contact.email:
+        missing.append("email")
+    if not contact.phone:
+        missing.append("phone")
+    if not contact.linkedin_url:
+        missing.append("LinkedIn")
+    if not contact.company:
+        missing.append("company")
+    return missing

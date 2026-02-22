@@ -185,6 +185,7 @@ class Contact:
     contact_type: Optional[str] = None  # founder, investor, enabler, professional
     research_quality: Optional[str] = None
     researched_date: Optional[str] = None
+    research_summary: Optional[str] = None  # In-memory only, not persisted to sheet
     imported_date: Optional[str] = None
     linkedin_status: Optional[str] = None
     

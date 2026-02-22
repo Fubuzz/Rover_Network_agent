@@ -1,13 +1,13 @@
 """
 Project-root fixtures for the Rover Network Agent test suite.
-Provides mocks for AI, Airtable, and session state so tests run
+Provides mocks for AI, Airtable, and memory state so tests run
 without any external API calls.
 """
 
 import pytest
 from unittest.mock import MagicMock, patch
 from data.schema import Contact
-from services.user_session import _user_sessions
+from services.contact_memory import get_memory_service
 
 
 # ── AI service mock ──────────────────────────────────────────
@@ -37,13 +37,14 @@ def mock_airtable():
         yield mock
 
 
-# ── Session cleanup ──────────────────────────────────────────
+# ── Memory cleanup ──────────────────────────────────────────
 @pytest.fixture(autouse=True)
-def clean_sessions():
-    """Clear _user_sessions before and after each test."""
-    _user_sessions.clear()
+def clean_memory():
+    """Clear ContactMemoryService._memories before and after each test."""
+    svc = get_memory_service()
+    svc._memories.clear()
     yield
-    _user_sessions.clear()
+    svc._memories.clear()
 
 
 # ── Reusable test data ───────────────────────────────────────
@@ -64,14 +65,3 @@ def sample_contact():
         linkedin_url="https://linkedin.com/in/janedoe",
         company_description="Cloud-based SaaS platform",
     )
-
-
-@pytest.fixture
-def sample_draft():
-    """A ContactDraft with common fields set."""
-    from services.user_session import ContactDraft
-    draft = ContactDraft(name="John Smith")
-    draft.update_field("title", "CTO")
-    draft.update_field("company", "WidgetCo")
-    draft.update_field("email", "john@widgetco.com")
-    return draft

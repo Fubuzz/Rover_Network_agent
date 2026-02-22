@@ -185,6 +185,44 @@ def normalize_email(email: str) -> str:
     return email.strip().lower()
 
 
+def validate_and_clean_field(field_name: str, value) -> tuple:
+    """
+    Validate and clean a single contact field.
+
+    Returns:
+        Tuple of (cleaned_value, is_valid, error_message)
+    """
+    if not value:
+        return value, True, None  # Empty is valid (optional)
+
+    value = str(value).strip()
+    if not value:
+        return value, True, None
+
+    if field_name == "email":
+        cleaned = value.lower()
+        pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if re.match(pattern, cleaned):
+            return cleaned, True, None
+        return value, False, f"Invalid email format: {value}"
+
+    if field_name == "phone":
+        # Keep only digits, +, -, (, ), and spaces
+        cleaned = re.sub(r'[^\d+\-() ]', '', value)
+        digits_only = re.sub(r'\D', '', cleaned)
+        if len(digits_only) < 7:
+            return "", False, f"Phone number too short (need at least 7 digits): {value}"
+        return cleaned.strip(), True, None
+
+    if field_name in ("linkedin_url", "company_linkedin"):
+        if "linkedin.com" not in value.lower():
+            return value, False, f"Not a valid LinkedIn URL: {value}"
+        return value, True, None
+
+    # All other fields: pass through stripped
+    return value, True, None
+
+
 def normalize_linkedin_url(url: str) -> str:
     """
     Normalize LinkedIn URL.

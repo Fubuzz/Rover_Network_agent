@@ -1566,7 +1566,7 @@ async def process_message_legacy(user_id: str, message: str) -> str:
                 if result.intent == Intent.UPDATE_CONTACT:
                     # Add their pending info
                     if result.entities.get('linkedin') or result.entities.get('linkedin_url'):
-                        memory.start_pending(user_id, existing.name)
+                        memory.start_collecting(user_id, existing)
                         memory.update_pending(user_id, result.entities)
 
     # Route to appropriate handler

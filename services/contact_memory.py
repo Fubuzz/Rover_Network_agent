@@ -253,6 +253,24 @@ class UserMemory:
             return 0.0
         return (datetime.now() - self.last_message_time).total_seconds()
 
+    def set_research_summary(self, summary: str):
+        """Set research summary on pending/current contact."""
+        contact = self.pending_contact or self.current_contact
+        if contact and summary and summary.strip():
+            contact.research_summary = summary.strip()
+            self.touch()
+
+    def append_notes(self, text: str):
+        """Append timestamped notes to pending/current contact."""
+        contact = self.pending_contact or self.current_contact
+        if contact and text and text.strip():
+            timestamp = datetime.now().strftime("%H:%M")
+            if contact.notes:
+                contact.notes += f"\n\n[{timestamp}] {text.strip()}"
+            else:
+                contact.notes = f"[{timestamp}] {text.strip()}"
+            self.touch()
+
     def get_context_summary(self) -> str:
         """Get a summary of current context for debugging."""
         current = self.current_contact.name if self.current_contact else "None"
@@ -430,6 +448,14 @@ class ContactMemoryService:
     def get_seconds_since_last_message(self, user_id: str) -> float:
         """Get seconds elapsed since last message for this user."""
         return self.get_memory(user_id).get_seconds_since_last_message()
+
+    def set_research_summary(self, user_id: str, summary: str):
+        """Set research summary on the pending/current contact."""
+        self.get_memory(user_id).set_research_summary(summary)
+
+    def append_notes(self, user_id: str, text: str):
+        """Append timestamped notes to the pending/current contact."""
+        self.get_memory(user_id).append_notes(text)
 
     def get_context_for_ai(self, user_id: str) -> tuple[Optional[Contact], List[str], ConversationState]:
         """Get context for AI analysis including state."""

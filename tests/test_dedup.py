@@ -32,14 +32,15 @@ class TestEarlyDuplicateDetection:
         existing = Contact(full_name="Jane Doe", email="jane@example.com")
 
         with patch("services.agent_tools.find_contact_in_storage", return_value=existing), \
-             patch("services.agent_tools.get_memory_service"), \
-             patch("services.agent_tools.get_user_session") as mock_session:
-            mock_session.return_value.has_draft.return_value = False
+             patch("services.agent_tools.get_memory_service") as mock_mem:
+            mock_svc = MagicMock()
+            mock_svc.is_collecting.return_value = False
+            mock_mem.return_value = mock_svc
 
             from services.agent_tools import AgentTools
             tools = AgentTools.__new__(AgentTools)
             tools.user_id = "test_user"
-            tools.session = mock_session.return_value
+            tools.memory = mock_svc
 
             result = await tools.add_contact(name="Jane Doe")
             assert "already exists" in result
@@ -55,14 +56,15 @@ class TestEarlyDuplicateDetection:
 
         with patch("services.agent_tools.find_contact_in_storage", return_value=None), \
              patch("services.agent_tools.get_sheets_service", return_value=mock_sheets), \
-             patch("services.agent_tools.get_memory_service"), \
-             patch("services.agent_tools.get_user_session") as mock_session:
-            mock_session.return_value.has_draft.return_value = False
+             patch("services.agent_tools.get_memory_service") as mock_mem:
+            mock_svc = MagicMock()
+            mock_svc.is_collecting.return_value = False
+            mock_mem.return_value = mock_svc
 
             from services.agent_tools import AgentTools
             tools = AgentTools.__new__(AgentTools)
             tools.user_id = "test_user"
-            tools.session = mock_session.return_value
+            tools.memory = mock_svc
 
             result = await tools.add_contact(name="John Smith", email="jane@example.com")
             assert "already belongs to" in result
