@@ -6,378 +6,589 @@
     <title>Rover — Network Intelligence</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script>
         tailwind.config = {
-            theme: { extend: { fontFamily: { sans: ['Inter', 'system-ui'] } } }
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+                    colors: {
+                        accent: { 50:'#eef2ff', 100:'#e0e7ff', 500:'#6366f1', 600:'#4f46e5', 700:'#4338ca' }
+                    }
+                }
+            }
         }
     </script>
     <style>
-        body { background: #06080f; font-family: 'Inter', sans-serif; }
-        .glass { background: rgba(12, 17, 30, 0.8); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.04); }
-        .glow-c { box-shadow: 0 0 30px rgba(6, 182, 212, 0.1); }
-        .glow-p { box-shadow: 0 0 30px rgba(139, 92, 246, 0.1); }
-        .glow-t { box-shadow: 0 0 30px rgba(20, 184, 166, 0.1); }
-        .glow-a { box-shadow: 0 0 30px rgba(245, 158, 11, 0.1); }
-        .stat:hover { transform: translateY(-2px); transition: all 0.2s; }
-        .pulse { animation: pulse 2s infinite; }
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-        .fade-in { animation: fadeIn 0.4s ease-out; }
-        @keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
-        ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-track { background: #06080f; } ::-webkit-scrollbar-thumb { background: #1a2235; border-radius: 3px; }
-        .tab-on { border-bottom: 2px solid #06b6d4; color: #06b6d4; }
-        .tab-off { border-bottom: 2px solid transparent; color: #4b5563; }
-        .tab-off:hover { color: #9ca3af; }
-        .row:hover { background: rgba(6,182,212,0.03); }
-        .bar { transition: width 0.6s ease-out; }
-        .gradient-text { background: linear-gradient(135deg, #06b6d4, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        body { font-family: 'Inter', system-ui, sans-serif; background: #f9fafb; color: #111827; }
+        .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+        .tab-active { color: #4f46e5; border-bottom: 2px solid #4f46e5; }
+        .tab-inactive { color: #6b7280; border-bottom: 2px solid transparent; }
+        .tab-inactive:hover { color: #374151; }
+        .badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 500; line-height: 1.5; }
+        .score-bar { height: 6px; border-radius: 3px; background: #f3f4f6; overflow: hidden; }
+        .score-bar-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease-out; }
+        .sort-header { cursor: pointer; user-select: none; }
+        .sort-header:hover { color: #4f46e5; }
+        .sort-header .sort-icon { opacity: 0.3; font-size: 10px; margin-left: 2px; }
+        .sort-header.active .sort-icon { opacity: 1; color: #4f46e5; }
+        .row-hover:hover { background: #f9fafb; }
+        .fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+        .empty-state { text-align: center; padding: 48px 24px; color: #9ca3af; }
+        .empty-state p { font-size: 14px; margin-top: 8px; }
+        @media (max-width: 640px) {
+            .hero-grid { grid-template-columns: repeat(2, 1fr) !important; }
+        }
     </style>
 </head>
-<body class="text-gray-300 min-h-screen">
+<body class="min-h-screen">
     <!-- Header -->
-    <header class="sticky top-0 z-50 glass border-b border-white/5">
-        <div class="max-w-[1400px] mx-auto px-6 py-3.5 flex items-center justify-between">
-            <div class="flex items-center gap-3">
-                <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-violet-500 flex items-center justify-center text-white font-bold text-xs">R</div>
-                <div>
-                    <h1 class="text-base font-semibold text-white tracking-tight">Rover</h1>
-                    <p class="text-[10px] text-gray-500 -mt-0.5">Network Intelligence</p>
-                </div>
+    <header class="sticky top-0 z-50 bg-white border-b border-gray-200">
+        <div class="max-w-[1200px] mx-auto px-5 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-2.5">
+                <div class="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold text-xs">R</div>
+                <span class="text-[15px] font-semibold text-gray-900 tracking-tight">Rover</span>
             </div>
-            <div class="flex items-center gap-3">
-                <span class="pulse w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block"></span>
-                <span id="status" class="text-[10px] text-gray-500">Live</span>
-                <button onclick="refreshAll()" class="ml-2 px-2.5 py-1 rounded-md bg-white/5 hover:bg-white/10 text-[10px] text-gray-400 hover:text-white transition">↻</button>
+            <div class="flex items-center gap-3 text-xs text-gray-400">
+                <span id="status">Loading...</span>
+                <button onclick="refreshAll()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50 hover:text-gray-900 text-xs font-medium transition">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                    Refresh
+                </button>
             </div>
         </div>
     </header>
 
-    <main class="max-w-[1400px] mx-auto px-6 py-5 space-y-5">
-        <!-- Hero Stats -->
-        <div id="hero" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 fade-in"></div>
+    <main class="max-w-[1200px] mx-auto px-5 py-6 space-y-6">
+        <!-- 4 Hero Metric Cards -->
+        <div id="hero" class="grid grid-cols-2 lg:grid-cols-4 gap-4 hero-grid fade-in"></div>
 
-        <!-- Tabs -->
-        <div class="flex gap-5 border-b border-white/5">
-            <button onclick="tab('network')" id="t-network" class="tab-on pb-2.5 text-xs font-medium">Network</button>
-            <button onclick="tab('contacts')" id="t-contacts" class="tab-off pb-2.5 text-xs font-medium">Contacts</button>
-            <button onclick="tab('intros')" id="t-intros" class="tab-off pb-2.5 text-xs font-medium">Introductions</button>
-            <button onclick="tab('activity')" id="t-activity" class="tab-off pb-2.5 text-xs font-medium">Activity</button>
-            <button onclick="tab('followups')" id="t-followups" class="tab-off pb-2.5 text-xs font-medium">Follow-ups</button>
+        <!-- Tab Bar -->
+        <div class="flex gap-6 border-b border-gray-200">
+            <button onclick="tab('overview')" id="t-overview" class="tab-active pb-3 text-sm font-medium transition">Overview</button>
+            <button onclick="tab('contacts')" id="t-contacts" class="tab-inactive pb-3 text-sm font-medium transition">Contacts</button>
+            <button onclick="tab('intros')" id="t-intros" class="tab-inactive pb-3 text-sm font-medium transition">Introductions</button>
+            <button onclick="tab('activity')" id="t-activity" class="tab-inactive pb-3 text-sm font-medium transition">Activity</button>
         </div>
 
-        <!-- NETWORK TAB -->
-        <div id="p-network" class="tab-content space-y-5">
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
-                <div class="glass rounded-xl p-5 glow-c">
-                    <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-3">Contact Types</h3>
-                    <canvas id="ch-types" height="200"></canvas>
+        <!-- OVERVIEW TAB -->
+        <div id="p-overview" class="tab-content space-y-5 fade-in">
+            <!-- Row 1: Follow-ups + Contact Types donut -->
+            <div class="grid grid-cols-1 lg:grid-cols-5 gap-5">
+                <div class="lg:col-span-3 card p-5">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-sm font-semibold text-gray-900">Follow-ups Needing Attention</h3>
+                        <span id="followup-count" class="badge bg-gray-100 text-gray-500">0</span>
+                    </div>
+                    <div id="followups-list" class="space-y-2 max-h-[280px] overflow-y-auto"></div>
                 </div>
-                <div class="glass rounded-xl p-5 glow-p">
-                    <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-3">Relationship Scores</h3>
-                    <canvas id="ch-scores" height="200"></canvas>
-                </div>
-                <div class="glass rounded-xl p-5 glow-t">
-                    <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-3">Industries</h3>
-                    <canvas id="ch-industries" height="200"></canvas>
+                <div class="lg:col-span-2 card p-5">
+                    <h3 class="text-sm font-semibold text-gray-900 mb-4">Contact Types</h3>
+                    <div class="relative" style="height:220px"><canvas id="ch-types"></canvas></div>
                 </div>
             </div>
+
+            <!-- Row 2: Stages + Industries -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                <div class="glass rounded-xl p-5 glow-a">
-                    <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-3">Relationship Stages</h3>
-                    <canvas id="ch-stages" height="160"></canvas>
+                <div class="card p-5">
+                    <h3 class="text-sm font-semibold text-gray-900 mb-4">Relationship Stages</h3>
+                    <div style="height:200px"><canvas id="ch-stages"></canvas></div>
                 </div>
-                <div class="glass rounded-xl p-5">
-                    <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-3">Network Intelligence</h3>
-                    <div id="intel" class="space-y-3"></div>
+                <div class="card p-5">
+                    <h3 class="text-sm font-semibold text-gray-900 mb-4">Top Industries</h3>
+                    <div style="height:200px"><canvas id="ch-industries"></canvas></div>
+                </div>
+            </div>
+
+            <!-- Row 3: Network Intelligence + Activity sparkline -->
+            <div class="grid grid-cols-1 lg:grid-cols-5 gap-5">
+                <div class="lg:col-span-2 card p-5">
+                    <h3 class="text-sm font-semibold text-gray-900 mb-4">Network Intelligence</h3>
+                    <div id="intel" class="space-y-0"></div>
+                </div>
+                <div class="lg:col-span-3 card p-5">
+                    <h3 class="text-sm font-semibold text-gray-900 mb-4">Activity (Last 30 Days)</h3>
+                    <div style="height:180px"><canvas id="ch-sparkline"></canvas></div>
                 </div>
             </div>
         </div>
 
         <!-- CONTACTS TAB -->
-        <div id="p-contacts" class="tab-content hidden">
-            <div class="glass rounded-xl p-5 overflow-x-auto">
-                <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-sm font-medium text-white">All Contacts</h3>
-                    <input id="contact-search" type="text" placeholder="Search..." class="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white w-48 focus:outline-none focus:border-cyan-500/30" oninput="filterContacts()">
+        <div id="p-contacts" class="tab-content hidden fade-in">
+            <div class="card p-5 overflow-x-auto">
+                <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
+                    <h3 class="text-sm font-semibold text-gray-900">All Contacts</h3>
+                    <div class="flex items-center gap-2">
+                        <input id="contact-search" type="text" placeholder="Search contacts..."
+                            class="border border-gray-200 rounded-md px-3 py-1.5 text-sm text-gray-900 w-56 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 placeholder:text-gray-400"
+                            oninput="filterContacts()">
+                    </div>
                 </div>
-                <table class="w-full text-xs" id="contacts-table">
-                    <thead><tr class="text-[10px] text-gray-500 uppercase tracking-wider border-b border-white/5">
-                        <th class="text-left py-2 px-2">Name</th>
-                        <th class="text-left py-2 px-2">Title</th>
-                        <th class="text-left py-2 px-2">Company</th>
-                        <th class="text-left py-2 px-2">Type</th>
-                        <th class="text-left py-2 px-2">Score</th>
-                        <th class="text-left py-2 px-2">Stage</th>
-                        <th class="text-left py-2 px-2">Interactions</th>
-                        <th class="text-left py-2 px-2">Email</th>
-                        <th class="text-left py-2 px-2">Follow-up</th>
-                    </tr></thead>
+                <table class="w-full text-sm" id="contacts-table">
+                    <thead>
+                        <tr class="text-xs text-gray-500 uppercase tracking-wider border-b border-gray-100">
+                            <th class="sort-header text-left py-2.5 px-3 font-medium" onclick="sortContacts('name')">Name <span class="sort-icon">&#9650;</span></th>
+                            <th class="sort-header text-left py-2.5 px-3 font-medium" onclick="sortContacts('company')">Company <span class="sort-icon">&#9650;</span></th>
+                            <th class="sort-header text-left py-2.5 px-3 font-medium" onclick="sortContacts('classification')">Type <span class="sort-icon">&#9650;</span></th>
+                            <th class="sort-header text-left py-2.5 px-3 font-medium" onclick="sortContacts('relationship_score')">Score <span class="sort-icon">&#9650;</span></th>
+                            <th class="sort-header text-left py-2.5 px-3 font-medium" onclick="sortContacts('relationship_stage')">Stage <span class="sort-icon">&#9650;</span></th>
+                            <th class="sort-header text-left py-2.5 px-3 font-medium" onclick="sortContacts('interaction_count')">Interactions <span class="sort-icon">&#9650;</span></th>
+                            <th class="text-left py-2.5 px-3 font-medium">Email</th>
+                            <th class="sort-header text-left py-2.5 px-3 font-medium" onclick="sortContacts('follow_up_date')">Follow-up <span class="sort-icon">&#9650;</span></th>
+                        </tr>
+                    </thead>
                     <tbody id="contacts-body"></tbody>
                 </table>
+                <div id="contacts-empty" class="hidden empty-state">
+                    <p class="text-2xl">🐢</p>
+                    <p>No contacts found. Rover is still sniffing around!</p>
+                </div>
             </div>
         </div>
 
         <!-- INTRODUCTIONS TAB -->
-        <div id="p-intros" class="tab-content hidden">
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
-                <div class="glass rounded-xl p-5 glow-c">
-                    <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-3">Intro Status</h3>
-                    <canvas id="ch-intro-status" height="180"></canvas>
+        <div id="p-intros" class="tab-content hidden fade-in">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                <div class="card p-5">
+                    <h3 class="text-sm font-semibold text-gray-900 mb-4">Introduction Status</h3>
+                    <div class="relative" style="height:220px"><canvas id="ch-intro-status"></canvas></div>
                 </div>
-                <div class="lg:col-span-2 glass rounded-xl p-5">
-                    <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-3">Recent Introductions</h3>
-                    <div id="intros-list" class="space-y-2 max-h-64 overflow-y-auto"></div>
+                <div class="lg:col-span-2 card p-5">
+                    <h3 class="text-sm font-semibold text-gray-900 mb-4">Recent Introductions</h3>
+                    <div id="intros-list" class="space-y-2 max-h-[300px] overflow-y-auto"></div>
                 </div>
             </div>
         </div>
 
         <!-- ACTIVITY TAB -->
-        <div id="p-activity" class="tab-content hidden">
+        <div id="p-activity" class="tab-content hidden fade-in">
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                <div class="glass rounded-xl p-5 glow-c">
-                    <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-3">Interactions Over Time</h3>
-                    <canvas id="ch-timeline" height="200"></canvas>
+                <div class="card p-5">
+                    <h3 class="text-sm font-semibold text-gray-900 mb-4">Interactions Over Time</h3>
+                    <div style="height:220px"><canvas id="ch-timeline"></canvas></div>
                 </div>
-                <div class="glass rounded-xl p-5 glow-p">
-                    <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-3">Interaction Types</h3>
-                    <canvas id="ch-itypes" height="200"></canvas>
+                <div class="card p-5">
+                    <h3 class="text-sm font-semibold text-gray-900 mb-4">Interaction Types</h3>
+                    <div class="relative" style="height:220px"><canvas id="ch-itypes"></canvas></div>
                 </div>
             </div>
-            <div class="glass rounded-xl p-5 mt-5">
-                <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-3">Most Interacted Contacts</h3>
+            <div class="card p-5 mt-5">
+                <h3 class="text-sm font-semibold text-gray-900 mb-4">Most Interacted Contacts</h3>
                 <div id="top-contacts" class="space-y-2"></div>
-            </div>
-        </div>
-
-        <!-- FOLLOW-UPS TAB -->
-        <div id="p-followups" class="tab-content hidden">
-            <div class="glass rounded-xl p-5">
-                <h3 class="text-sm font-medium text-white mb-4">Follow-up Tracker</h3>
-                <div id="followups-list" class="space-y-2"></div>
             </div>
         </div>
     </main>
 
-    <footer class="max-w-[1400px] mx-auto px-6 py-6 text-center text-[10px] text-gray-700">
-        Rover Network Agent v3 • Built by Daisuke 🐢
+    <footer class="max-w-[1200px] mx-auto px-5 py-6 text-center text-xs text-gray-400">
+        Rover Network Agent v3
     </footer>
 
     <script>
-        Chart.defaults.color = '#4b5563';
-        Chart.defaults.borderColor = 'rgba(255,255,255,0.03)';
-        Chart.defaults.font.family = 'Inter';
-        Chart.defaults.font.size = 10;
+        /* ── Chart defaults ─────────────────────────── */
+        Chart.defaults.color = '#6b7280';
+        Chart.defaults.borderColor = '#f3f4f6';
+        Chart.defaults.font.family = 'Inter, system-ui, sans-serif';
+        Chart.defaults.font.size = 11;
 
-        const C = {cyan:'#06b6d4',teal:'#14b8a6',purple:'#8b5cf6',pink:'#ec4899',amber:'#f59e0b',emerald:'#10b981',red:'#ef4444',blue:'#3b82f6',indigo:'#6366f1',sky:'#0ea5e9'};
-        const PAL = [C.cyan,C.teal,C.purple,C.pink,C.amber,C.emerald,C.blue,C.indigo,C.sky,C.red];
-        let charts = {}, allContacts = [];
+        /* Muted pastel palette */
+        const PAL = ['#818cf8','#34d399','#fbbf24','#f87171','#60a5fa','#a78bfa','#fb923c','#2dd4bf','#f472b6','#94a3b8'];
+        const PAL_BG = PAL.map(c => c + '18');
 
+        let charts = {}, allContacts = [], sortCol = 'relationship_score', sortDir = -1;
+
+        /* ── Tabs ───────────────────────────────────── */
         function tab(t) {
-            document.querySelectorAll('.tab-content').forEach(e=>e.classList.add('hidden'));
-            document.querySelectorAll('[id^="t-"]').forEach(e=>e.className='tab-off pb-2.5 text-xs font-medium');
-            document.getElementById('p-'+t).classList.remove('hidden');
-            document.getElementById('t-'+t).className='tab-on pb-2.5 text-xs font-medium';
+            document.querySelectorAll('.tab-content').forEach(e => e.classList.add('hidden'));
+            document.querySelectorAll('[id^="t-"]').forEach(e => { e.className = 'tab-inactive pb-3 text-sm font-medium transition'; });
+            const panel = document.getElementById('p-' + t);
+            if (panel) { panel.classList.remove('hidden'); }
+            const btn = document.getElementById('t-' + t);
+            if (btn) { btn.className = 'tab-active pb-3 text-sm font-medium transition'; }
         }
 
-        async function api(ep) { try { return await (await fetch('/api/'+ep)).json(); } catch(e) { return null; } }
-
-        function mkChart(id,type,data,opts={}) {
-            if(charts[id]) charts[id].destroy();
-            const ctx=document.getElementById(id);
-            if(!ctx) return;
-            charts[id]=new Chart(ctx,{type,data,options:{
-                responsive:true,maintainAspectRatio:false,
-                plugins:{legend:{display:opts.legend!==false,labels:{boxWidth:8,padding:8,font:{size:10}}}},
-                scales:type==='doughnut'||type==='pie'?{}:{
-                    x:{grid:{display:false},ticks:{maxTicksLimit:10,font:{size:9}}},
-                    y:{grid:{color:'rgba(255,255,255,0.02)'},beginAtZero:true,ticks:{font:{size:9}}}
-                },...opts
-            }});
+        /* ── API helper ─────────────────────────────── */
+        async function api(ep) {
+            try { return await (await fetch('/api/' + ep)).json(); }
+            catch (e) { return null; }
         }
 
-        function stat(label,value,icon,color,glow='') {
-            return `<div class="stat glass rounded-xl p-3.5 ${glow} cursor-default">
-                <div class="flex items-center gap-1.5 mb-1.5"><span class="text-sm">${icon}</span><span class="text-[9px] text-gray-500 uppercase tracking-wider">${label}</span></div>
-                <p class="text-xl font-bold ${color}">${value}</p>
+        /* ── Chart helper ───────────────────────────── */
+        function mkChart(id, type, data, opts = {}) {
+            if (charts[id]) charts[id].destroy();
+            const ctx = document.getElementById(id);
+            if (!ctx) return;
+            const isDonut = type === 'doughnut' || type === 'pie';
+            charts[id] = new Chart(ctx, {
+                type, data,
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: opts.legend !== false,
+                            position: opts.legendPos || 'bottom',
+                            labels: { boxWidth: 10, padding: 12, font: { size: 11 }, color: '#6b7280' }
+                        }
+                    },
+                    scales: isDonut ? {} : {
+                        x: { grid: { display: false }, ticks: { maxTicksLimit: 12, font: { size: 10 }, color: '#9ca3af' } },
+                        y: { grid: { color: '#f3f4f6' }, beginAtZero: true, ticks: { font: { size: 10 }, color: '#9ca3af' } }
+                    },
+                    ...opts
+                }
+            });
+        }
+
+        /* ── Badge helpers ──────────────────────────── */
+        function typeBadge(type) {
+            const colors = {
+                'investor': { bg: '#dbeafe', text: '#1e40af' },
+                'founder': { bg: '#fce7f3', text: '#9d174d' },
+                'operator': { bg: '#e0e7ff', text: '#3730a3' },
+                'advisor': { bg: '#d1fae5', text: '#065f46' },
+                'connector': { bg: '#fef3c7', text: '#92400e' },
+                'mentor': { bg: '#ede9fe', text: '#5b21b6' },
+                'peer': { bg: '#f3f4f6', text: '#374151' },
+            };
+            const c = colors[(type || '').toLowerCase()] || { bg: '#f3f4f6', text: '#6b7280' };
+            return `<span class="badge" style="background:${c.bg};color:${c.text}">${type || 'unknown'}</span>`;
+        }
+
+        function stageBadge(stage) {
+            const colors = {
+                'new': { bg: '#dbeafe', text: '#1e40af' },
+                'building': { bg: '#e0e7ff', text: '#4338ca' },
+                'strong': { bg: '#d1fae5', text: '#065f46' },
+                'dormant': { bg: '#fef3c7', text: '#92400e' },
+                'lost': { bg: '#fee2e2', text: '#991b1b' },
+            };
+            const c = colors[(stage || '').toLowerCase()] || { bg: '#f3f4f6', text: '#6b7280' };
+            return `<span class="badge" style="background:${c.bg};color:${c.text}">${stage || 'new'}</span>`;
+        }
+
+        function scoreBar(score) {
+            score = score || 0;
+            let color = '#ef4444';
+            if (score >= 70) color = '#10b981';
+            else if (score >= 40) color = '#f59e0b';
+            return `<div class="flex items-center gap-2">
+                <span class="text-sm font-medium" style="color:${color};min-width:24px">${score}</span>
+                <div class="score-bar flex-1" style="width:80px"><div class="score-bar-fill" style="width:${score}%;background:${color}"></div></div>
             </div>`;
         }
 
-        function scoreBadge(s) {
-            s=s||0;const c=s>=70?'emerald':s>=40?'amber':'red';
-            return `<div class="flex items-center gap-1.5"><span class="text-${c}-400 font-semibold">${s}</span><div class="w-12 h-1 rounded-full bg-white/10"><div class="bar h-full rounded-full bg-${c}-400" style="width:${s}%"></div></div></div>`;
-        }
-
-        function stageBadge(s) {
-            const colors={new:'blue',building:'cyan',strong:'emerald',dormant:'yellow',lost:'red'};
-            const c=colors[s]||'gray';
-            return `<span class="px-1.5 py-0.5 rounded text-[9px] bg-${c}-500/10 text-${c}-400">${s||'new'}</span>`;
-        }
-
-        function timeAgo(ts) {
-            if(!ts) return '—';
-            const d=(Date.now()-new Date(ts+'Z').getTime())/1000;
-            if(d<60) return 'now'; if(d<3600) return Math.floor(d/60)+'m'; if(d<86400) return Math.floor(d/3600)+'h'; return Math.floor(d/86400)+'d';
+        /* ── Hero cards ─────────────────────────────── */
+        function heroCard(label, value, subtitle, color) {
+            return `<div class="card p-5">
+                <p class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">${label}</p>
+                <p class="text-2xl font-bold" style="color:${color}">${value}</p>
+                ${subtitle ? `<p class="text-xs text-gray-400 mt-1">${subtitle}</p>` : ''}
+            </div>`;
         }
 
         async function loadHero() {
-            const [ov,intel]=await Promise.all([api('overview'),api('intelligence')]);
-            if(!ov) return;
-            document.getElementById('hero').innerHTML=[
-                stat('Contacts',intel?.total_contacts||0,'👥','text-cyan-400','glow-c'),
-                stat('Interactions',ov.total_interactions,'💬','text-teal-400','glow-t'),
-                stat('Health',intel?.network_health||0,'❤️','text-purple-400','glow-p'),
-                stat('Follow-ups',ov.pending_follow_ups,'📅','text-amber-400','glow-a'),
-                stat('Enriched',(intel?.enrichment_rate||0)+'%','🔬','text-emerald-400'),
-                stat('Has Email',(intel?.email_rate||0)+'%','📧','text-sky-400'),
-                stat('Active',intel?.active_relationships||0,'🟢','text-green-400'),
-                stat('Industries',intel?.industries_count||0,'🏭','text-indigo-400'),
+            const [ov, intel] = await Promise.all([api('overview'), api('intelligence')]);
+            if (!ov && !intel) return;
+            const contacts = intel?.total_contacts || 0;
+            const followups = ov?.pending_follow_ups || 0;
+            const health = intel?.network_health || 0;
+            const active = intel?.active_relationships || 0;
+
+            document.getElementById('hero').innerHTML = [
+                heroCard('Total Contacts', contacts, `${intel?.enrichment_rate || 0}% enriched`, '#4f46e5'),
+                heroCard('Pending Follow-ups', followups, followups > 0 ? 'Needs your attention' : 'All clear', followups > 3 ? '#ef4444' : '#f59e0b'),
+                heroCard('Network Health', health + '/100', health >= 60 ? 'Looking good' : 'Room to grow', health >= 60 ? '#10b981' : '#f59e0b'),
+                heroCard('Active Relationships', active, `${intel?.dormant_relationships || 0} dormant`, '#4f46e5'),
             ].join('');
         }
 
-        async function loadNetwork() {
-            const data=await api('contacts');
-            if(!data||data.error) return;
-            allContacts=data.contacts||[];
+        /* ── Overview tab ───────────────────────────── */
+        async function loadOverview() {
+            const data = await api('contacts');
+            if (!data || data.error) return;
+            allContacts = data.contacts || [];
 
-            // Types chart
-            const cls=data.classifications||{};
-            mkChart('ch-types','doughnut',{labels:Object.keys(cls),datasets:[{data:Object.values(cls),backgroundColor:PAL,borderWidth:0}]},{cutout:'60%'});
+            // Contact Types donut
+            const cls = data.classifications || {};
+            if (Object.keys(cls).length) {
+                mkChart('ch-types', 'doughnut', {
+                    labels: Object.keys(cls),
+                    datasets: [{ data: Object.values(cls), backgroundColor: PAL, borderWidth: 0, hoverOffset: 4 }]
+                }, { cutout: '65%', legendPos: 'right' });
+            }
 
-            // Scores
-            const sd=data.score_distribution||{};
-            mkChart('ch-scores','bar',{labels:Object.keys(sd),datasets:[{label:'Contacts',data:Object.values(sd),backgroundColor:[C.red+'80',C.amber+'80',C.cyan+'80',C.teal+'80',C.emerald+'80'],borderRadius:4}]});
+            // Relationship Stages bar
+            const st = data.stages || {};
+            const stageOrder = ['new', 'building', 'strong', 'dormant', 'lost'];
+            const stageColors = { new: '#60a5fa', building: '#818cf8', strong: '#34d399', dormant: '#fbbf24', lost: '#f87171' };
+            const orderedStages = stageOrder.filter(s => s in st);
+            mkChart('ch-stages', 'bar', {
+                labels: orderedStages.map(s => s.charAt(0).toUpperCase() + s.slice(1)),
+                datasets: [{
+                    data: orderedStages.map(s => st[s]),
+                    backgroundColor: orderedStages.map(s => stageColors[s] || '#94a3b8'),
+                    borderRadius: 4, barPercentage: 0.6
+                }]
+            }, { plugins: { legend: { display: false } } });
 
-            // Industries
-            const ind=data.industries||{};
-            mkChart('ch-industries','bar',{labels:Object.keys(ind).map(s=>s.length>12?s.slice(0,12)+'…':s),datasets:[{data:Object.values(ind),backgroundColor:PAL.map(c=>c+'80'),borderRadius:4}]},{indexAxis:'y'});
+            // Industries horizontal bar
+            const ind = data.industries || {};
+            const indKeys = Object.keys(ind);
+            if (indKeys.length) {
+                mkChart('ch-industries', 'bar', {
+                    labels: indKeys.map(s => s.length > 18 ? s.slice(0, 18) + '...' : s),
+                    datasets: [{
+                        data: Object.values(ind),
+                        backgroundColor: '#818cf8',
+                        borderRadius: 4, barPercentage: 0.6
+                    }]
+                }, { indexAxis: 'y', plugins: { legend: { display: false } } });
+            }
 
-            // Stages
-            const st=data.stages||{};
-            const stageColors={new:C.blue+'80',building:C.cyan+'80',strong:C.emerald+'80',dormant:C.amber+'80',lost:C.red+'80'};
-            mkChart('ch-stages','doughnut',{labels:Object.keys(st),datasets:[{data:Object.values(st),backgroundColor:Object.keys(st).map(s=>stageColors[s]||C.purple+'80'),borderWidth:0}]},{cutout:'60%'});
+            // Network Intelligence KPIs
+            const intel = await api('intelligence');
+            if (intel && !intel.error) {
+                const kpis = [
+                    { label: 'Network Health', value: intel.network_health + '/100', color: intel.network_health >= 60 ? '#10b981' : '#f59e0b' },
+                    { label: 'Enrichment Rate', value: intel.enrichment_rate + '%', color: '#4f46e5' },
+                    { label: 'Email Coverage', value: intel.email_rate + '%', color: '#4f46e5' },
+                    { label: 'Active Relationships', value: intel.active_relationships, color: '#10b981' },
+                    { label: 'Dormant / Lost', value: intel.dormant_relationships, color: '#ef4444' },
+                    { label: 'Industries Covered', value: intel.industries_count, color: '#818cf8' },
+                ];
+                document.getElementById('intel').innerHTML = kpis.map((k, i) =>
+                    `<div class="flex items-center justify-between py-2.5 ${i < kpis.length - 1 ? 'border-b border-gray-100' : ''}">
+                        <span class="text-sm text-gray-500">${k.label}</span>
+                        <span class="text-sm font-semibold" style="color:${k.color}">${k.value}</span>
+                    </div>`
+                ).join('');
+            }
 
-            // Intelligence panel
-            const intel=await api('intelligence');
-            if(intel&&!intel.error) {
-                const el=document.getElementById('intel');
-                el.innerHTML=`
-                    <div class="flex justify-between py-2 border-b border-white/5"><span class="text-gray-400">Network Health Score</span><span class="text-white font-semibold gradient-text">${intel.network_health}/100</span></div>
-                    <div class="flex justify-between py-2 border-b border-white/5"><span class="text-gray-400">Enrichment Rate</span><span class="text-emerald-400 font-semibold">${intel.enrichment_rate}%</span></div>
-                    <div class="flex justify-between py-2 border-b border-white/5"><span class="text-gray-400">Email Coverage</span><span class="text-sky-400 font-semibold">${intel.email_rate}%</span></div>
-                    <div class="flex justify-between py-2 border-b border-white/5"><span class="text-gray-400">Active Relationships</span><span class="text-green-400 font-semibold">${intel.active_relationships}</span></div>
-                    <div class="flex justify-between py-2 border-b border-white/5"><span class="text-gray-400">Dormant/Lost</span><span class="text-red-400 font-semibold">${intel.dormant_relationships}</span></div>
-                    <div class="flex justify-between py-2"><span class="text-gray-400">Industries Covered</span><span class="text-purple-400 font-semibold">${intel.industries_count}</span></div>
-                `;
+            // Activity sparkline
+            const interactions = await api('interactions');
+            if (interactions) {
+                const tl = interactions.timeline || [];
+                if (tl.length) {
+                    mkChart('ch-sparkline', 'line', {
+                        labels: tl.map(t => { const d = t.day.slice(5); return d; }),
+                        datasets: [{
+                            label: 'Interactions',
+                            data: tl.map(t => t.count),
+                            borderColor: '#818cf8',
+                            backgroundColor: '#818cf820',
+                            fill: true, tension: 0.4, pointRadius: 2, pointBackgroundColor: '#818cf8',
+                            borderWidth: 2
+                        }]
+                    }, { plugins: { legend: { display: false } } });
+                }
             }
 
             renderContacts(allContacts);
         }
 
+        /* ── Follow-ups (on overview) ───────────────── */
+        async function loadFollowups() {
+            const data = await api('interactions');
+            if (!data) return;
+            const el = document.getElementById('followups-list');
+            const countEl = document.getElementById('followup-count');
+            const fus = (data.follow_ups || []).filter(f => !f.completed);
+
+            if (countEl) countEl.textContent = fus.length;
+
+            if (!fus.length) {
+                el.innerHTML = `<div class="empty-state py-8">
+                    <p class="text-xl">🐢</p>
+                    <p>No pending follow-ups. Rover approves!</p>
+                </div>`;
+                return;
+            }
+
+            const today = new Date().toISOString().slice(0, 10);
+            el.innerHTML = fus.map(f => {
+                const overdue = f.follow_up_date && f.follow_up_date < today;
+                const isToday = f.follow_up_date === today;
+                let statusBg, statusText, statusLabel;
+                if (overdue) { statusBg = '#fee2e2'; statusText = '#991b1b'; statusLabel = 'Overdue'; }
+                else if (isToday) { statusBg = '#fef3c7'; statusText = '#92400e'; statusLabel = 'Today'; }
+                else { statusBg = '#f3f4f6'; statusText = '#6b7280'; statusLabel = f.follow_up_date || 'Scheduled'; }
+
+                return `<div class="flex items-center gap-3 p-3 rounded-lg border ${overdue ? 'border-red-200 bg-red-50/50' : 'border-gray-100 hover:bg-gray-50'} transition">
+                    <div class="flex-1 min-w-0">
+                        <span class="text-sm font-medium text-gray-900">${f.contact_name}</span>
+                        ${f.reason ? `<span class="text-xs text-gray-400 ml-2">${f.reason}</span>` : ''}
+                    </div>
+                    <span class="badge shrink-0" style="background:${statusBg};color:${statusText}">${statusLabel}</span>
+                </div>`;
+            }).join('');
+        }
+
+        /* ── Contacts table ─────────────────────────── */
         function renderContacts(contacts) {
-            const body=document.getElementById('contacts-body');
-            body.innerHTML=contacts.map(c=>`
-                <tr class="row border-b border-white/[0.02] transition">
-                    <td class="py-2 px-2 text-white font-medium">${c.name}${c.linkedin?` <a href="${c.linkedin}" target="_blank" class="text-cyan-500/50 text-[9px]">↗</a>`:''}</td>
-                    <td class="py-2 px-2 text-gray-400">${c.title||'—'}</td>
-                    <td class="py-2 px-2 text-gray-400">${c.company||'—'}</td>
-                    <td class="py-2 px-2"><span class="px-1.5 py-0.5 rounded text-[9px] bg-white/5">${c.classification}</span></td>
-                    <td class="py-2 px-2">${scoreBadge(c.relationship_score)}</td>
-                    <td class="py-2 px-2">${stageBadge(c.relationship_stage)}</td>
-                    <td class="py-2 px-2 text-gray-400">${c.interaction_count||0}</td>
-                    <td class="py-2 px-2 text-gray-500 text-[10px]">${c.email?'✅':'—'}</td>
-                    <td class="py-2 px-2 text-gray-500 text-[10px]">${c.follow_up_date||'—'}</td>
+            const body = document.getElementById('contacts-body');
+            const emptyEl = document.getElementById('contacts-empty');
+
+            if (!contacts.length) {
+                body.innerHTML = '';
+                if (emptyEl) emptyEl.classList.remove('hidden');
+                return;
+            }
+            if (emptyEl) emptyEl.classList.add('hidden');
+
+            body.innerHTML = contacts.map(c => `
+                <tr class="row-hover border-b border-gray-50 transition">
+                    <td class="py-2.5 px-3">
+                        <span class="text-sm font-medium text-gray-900">${c.name}</span>
+                        ${c.linkedin ? ` <a href="${c.linkedin}" target="_blank" rel="noopener" class="text-indigo-400 hover:text-indigo-600 text-xs">&#8599;</a>` : ''}
+                        ${c.title ? `<p class="text-xs text-gray-400 mt-0.5">${c.title}</p>` : ''}
+                    </td>
+                    <td class="py-2.5 px-3 text-sm text-gray-600">${c.company || '<span class="text-gray-300">&mdash;</span>'}</td>
+                    <td class="py-2.5 px-3">${typeBadge(c.classification)}</td>
+                    <td class="py-2.5 px-3">${scoreBar(c.relationship_score)}</td>
+                    <td class="py-2.5 px-3">${stageBadge(c.relationship_stage)}</td>
+                    <td class="py-2.5 px-3 text-sm text-gray-600 text-center">${c.interaction_count || 0}</td>
+                    <td class="py-2.5 px-3 text-sm">${c.email ? '<span class="text-emerald-500">&#10003;</span>' : '<span class="text-gray-300">&mdash;</span>'}</td>
+                    <td class="py-2.5 px-3 text-xs text-gray-500">${c.follow_up_date || '<span class="text-gray-300">&mdash;</span>'}</td>
                 </tr>
             `).join('');
         }
 
         function filterContacts() {
-            const q=document.getElementById('contact-search').value.toLowerCase();
-            const filtered=allContacts.filter(c=>
-                (c.name||'').toLowerCase().includes(q)||
-                (c.company||'').toLowerCase().includes(q)||
-                (c.industry||'').toLowerCase().includes(q)||
-                (c.classification||'').toLowerCase().includes(q)
+            const q = document.getElementById('contact-search').value.toLowerCase();
+            const filtered = allContacts.filter(c =>
+                (c.name || '').toLowerCase().includes(q) ||
+                (c.company || '').toLowerCase().includes(q) ||
+                (c.industry || '').toLowerCase().includes(q) ||
+                (c.classification || '').toLowerCase().includes(q) ||
+                (c.title || '').toLowerCase().includes(q)
             );
             renderContacts(filtered);
         }
 
-        async function loadIntros() {
-            const data=await api('introductions');
-            if(!data) return;
-            
-            const sc=data.status_counts||{};
-            if(Object.keys(sc).length) {
-                const sColors={suggested:C.blue+'80',requested:C.amber+'80',made:C.emerald+'80',declined:C.red+'80'};
-                mkChart('ch-intro-status','doughnut',{labels:Object.keys(sc),datasets:[{data:Object.values(sc),backgroundColor:Object.keys(sc).map(s=>sColors[s]||C.purple+'80'),borderWidth:0}]},{cutout:'60%'});
+        function sortContacts(col) {
+            if (sortCol === col) { sortDir *= -1; }
+            else { sortCol = col; sortDir = col === 'relationship_score' || col === 'interaction_count' ? -1 : 1; }
+
+            // Update header active states
+            document.querySelectorAll('.sort-header').forEach(h => h.classList.remove('active'));
+            const headers = document.querySelectorAll('.sort-header');
+            const colMap = ['name', 'company', 'classification', 'relationship_score', 'relationship_stage', 'interaction_count', null, 'follow_up_date'];
+            const idx = colMap.indexOf(col);
+            if (idx >= 0 && headers[idx]) {
+                headers[idx].classList.add('active');
+                headers[idx].querySelector('.sort-icon').innerHTML = sortDir === 1 ? '&#9650;' : '&#9660;';
             }
 
-            const el=document.getElementById('intros-list');
-            const intros=data.introductions||[];
-            if(!intros.length){el.innerHTML='<p class="text-gray-600 text-xs">No introductions yet</p>';return;}
-            el.innerHTML=intros.map(i=>{
-                const emoji={suggested:'💡',requested:'📨',made:'✅',declined:'❌'}[i.status]||'❓';
-                return `<div class="p-3 rounded-lg bg-white/[0.02] hover:bg-white/[0.04] transition">
-                    <div class="flex items-center gap-2"><span>${emoji}</span><span class="text-white text-xs font-medium">${i.connector}</span><span class="text-gray-500">→</span><span class="text-white text-xs font-medium">${i.target}</span><span class="ml-auto text-[9px] text-gray-600">${i.date}</span></div>
-                    ${i.reason?`<p class="text-[10px] text-gray-500 mt-1 ml-6">${i.reason}</p>`:''}
+            allContacts.sort((a, b) => {
+                let va = a[col], vb = b[col];
+                if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * sortDir;
+                va = (va || '').toString().toLowerCase();
+                vb = (vb || '').toString().toLowerCase();
+                return va < vb ? -1 * sortDir : va > vb ? 1 * sortDir : 0;
+            });
+            renderContacts(allContacts);
+        }
+
+        /* ── Introductions ──────────────────────────── */
+        async function loadIntros() {
+            const data = await api('introductions');
+            if (!data) return;
+
+            const sc = data.status_counts || {};
+            if (Object.keys(sc).length) {
+                const sColors = { suggested: '#60a5fa', requested: '#fbbf24', made: '#34d399', declined: '#f87171' };
+                mkChart('ch-intro-status', 'doughnut', {
+                    labels: Object.keys(sc).map(s => s.charAt(0).toUpperCase() + s.slice(1)),
+                    datasets: [{ data: Object.values(sc), backgroundColor: Object.keys(sc).map(s => sColors[s] || '#94a3b8'), borderWidth: 0, hoverOffset: 4 }]
+                }, { cutout: '65%' });
+            }
+
+            const el = document.getElementById('intros-list');
+            const intros = data.introductions || [];
+            if (!intros.length) {
+                el.innerHTML = `<div class="empty-state py-8">
+                    <p class="text-xl">🐢</p>
+                    <p>No introductions yet. Rover will start connecting people soon!</p>
+                </div>`;
+                return;
+            }
+
+            const statusStyle = {
+                suggested: { bg: '#dbeafe', text: '#1e40af' },
+                requested: { bg: '#fef3c7', text: '#92400e' },
+                made: { bg: '#d1fae5', text: '#065f46' },
+                declined: { bg: '#fee2e2', text: '#991b1b' },
+            };
+
+            el.innerHTML = intros.map(i => {
+                const s = statusStyle[i.status] || { bg: '#f3f4f6', text: '#6b7280' };
+                return `<div class="flex items-center gap-3 p-3 rounded-lg border border-gray-100 hover:bg-gray-50 transition">
+                    <div class="flex-1 min-w-0">
+                        <span class="text-sm font-medium text-gray-900">${i.connector}</span>
+                        <span class="text-gray-400 mx-1.5">&rarr;</span>
+                        <span class="text-sm font-medium text-gray-900">${i.target}</span>
+                        ${i.reason ? `<p class="text-xs text-gray-400 mt-0.5 truncate">${i.reason}</p>` : ''}
+                    </div>
+                    <span class="badge shrink-0" style="background:${s.bg};color:${s.text}">${i.status}</span>
+                    <span class="text-xs text-gray-400 shrink-0">${i.date || ''}</span>
                 </div>`;
             }).join('');
         }
 
+        /* ── Activity tab ───────────────────────────── */
         async function loadActivity() {
-            const data=await api('interactions');
-            if(!data) return;
+            const data = await api('interactions');
+            if (!data) return;
 
-            const tl=data.timeline||[];
-            mkChart('ch-timeline','line',{labels:tl.map(t=>t.day.slice(5)),datasets:[{label:'Interactions',data:tl.map(t=>t.count),borderColor:C.cyan,backgroundColor:C.cyan+'15',fill:true,tension:0.4,pointRadius:2}]});
+            const tl = data.timeline || [];
+            if (tl.length) {
+                mkChart('ch-timeline', 'line', {
+                    labels: tl.map(t => t.day.slice(5)),
+                    datasets: [{
+                        label: 'Interactions', data: tl.map(t => t.count),
+                        borderColor: '#818cf8', backgroundColor: '#818cf820',
+                        fill: true, tension: 0.4, pointRadius: 2, borderWidth: 2, pointBackgroundColor: '#818cf8'
+                    }]
+                }, { plugins: { legend: { display: false } } });
+            }
 
-            const types=data.by_type||[];
-            mkChart('ch-itypes','doughnut',{labels:types.map(t=>t.interaction_type),datasets:[{data:types.map(t=>t.count),backgroundColor:PAL,borderWidth:0}]},{cutout:'60%'});
+            const types = data.by_type || [];
+            if (types.length) {
+                mkChart('ch-itypes', 'doughnut', {
+                    labels: types.map(t => t.interaction_type),
+                    datasets: [{ data: types.map(t => t.count), backgroundColor: PAL, borderWidth: 0, hoverOffset: 4 }]
+                }, { cutout: '65%' });
+            }
 
-            const tc=document.getElementById('top-contacts');
-            const contacts=data.by_contact||[];
-            if(!contacts.length){tc.innerHTML='<p class="text-gray-600 text-xs">No interactions yet</p>';return;}
-            const max=contacts[0]?.interaction_count||1;
-            tc.innerHTML=contacts.slice(0,10).map(c=>`
-                <div class="flex items-center gap-3 py-1.5">
-                    <span class="text-xs text-white w-32 truncate font-medium">${c.contact_name}</span>
-                    <div class="flex-1 h-2 rounded-full bg-white/5"><div class="bar h-full rounded-full bg-gradient-to-r from-cyan-500 to-teal-500" style="width:${c.interaction_count/max*100}%"></div></div>
-                    <span class="text-[10px] text-cyan-400 font-medium w-6 text-right">${c.interaction_count}</span>
+            const tc = document.getElementById('top-contacts');
+            const contacts = data.by_contact || [];
+            if (!contacts.length) {
+                tc.innerHTML = `<div class="empty-state py-6">
+                    <p class="text-xl">🐢</p>
+                    <p>No interactions logged yet.</p>
+                </div>`;
+                return;
+            }
+            const max = contacts[0]?.interaction_count || 1;
+            tc.innerHTML = contacts.slice(0, 10).map(c => `
+                <div class="flex items-center gap-3 py-2">
+                    <span class="text-sm text-gray-900 w-36 truncate font-medium">${c.contact_name}</span>
+                    <div class="flex-1 score-bar"><div class="score-bar-fill" style="width:${c.interaction_count / max * 100}%;background:#818cf8"></div></div>
+                    <span class="text-xs text-indigo-600 font-semibold w-8 text-right">${c.interaction_count}</span>
                 </div>
             `).join('');
         }
 
-        async function loadFollowups() {
-            const data=await api('interactions');
-            if(!data) return;
-            const el=document.getElementById('followups-list');
-            const fus=(data.follow_ups||[]).filter(f=>!f.completed);
-            if(!fus.length){el.innerHTML='<p class="text-gray-600 text-xs">No pending follow-ups ✅</p>';return;}
-            
-            const today=new Date().toISOString().slice(0,10);
-            el.innerHTML=fus.map(f=>{
-                const overdue=f.follow_up_date<today;
-                const isToday=f.follow_up_date===today;
-                const icon=overdue?'🔴':isToday?'🔥':'📌';
-                const label=overdue?'OVERDUE':isToday?'TODAY':f.follow_up_date;
-                return `<div class="flex items-center gap-3 p-3 rounded-lg bg-white/[0.02] hover:bg-white/[0.04] transition">
-                    <span>${icon}</span>
-                    <div class="flex-1">
-                        <span class="text-white text-xs font-medium">${f.contact_name}</span>
-                        ${f.reason?`<span class="text-gray-500 text-[10px] ml-2">${f.reason}</span>`:''}
-                    </div>
-                    <span class="text-[10px] ${overdue?'text-red-400':isToday?'text-amber-400':'text-gray-500'} font-medium">${label}</span>
-                </div>`;
-            }).join('');
-        }
-
+        /* ── Refresh ────────────────────────────────── */
         async function refreshAll() {
-            document.getElementById('status').textContent='Refreshing...';
-            await Promise.all([loadHero(),loadNetwork(),loadIntros(),loadActivity(),loadFollowups()]);
-            document.getElementById('status').textContent=`Updated ${new Date().toLocaleTimeString()}`;
+            document.getElementById('status').textContent = 'Refreshing...';
+            await Promise.all([loadHero(), loadOverview(), loadFollowups(), loadIntros(), loadActivity()]);
+            const now = new Date();
+            document.getElementById('status').textContent = 'Updated ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         }
 
         refreshAll();
-        setInterval(refreshAll,30000);
+        setInterval(refreshAll, 30000);
     </script>
 </body>
 </html>
