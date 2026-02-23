@@ -18,7 +18,7 @@ from typing import Optional, Dict, Any, List
 
 from services.contact_memory import (
     get_memory_service, ConversationState,
-    TaskType, TaskStatus, IntroDraftSlots, FollowupSetupSlots,
+    TaskType, TaskStatus, ContactDraftSlots, IntroDraftSlots, FollowupSetupSlots,
     ActiveTask,
 )
 from utils.validators import validate_and_clean_field
@@ -819,17 +819,44 @@ Provide a brief, informative summary suitable for a contact profile."""
         return f"No one named {name} in your network yet. Want to add them?"
 
     async def cancel_current(self) -> str:
-        """Cancel the current contact without saving."""
-        pending = self.memory.get_pending_contact(self.user_id)
+        """Cancel the current task — dispatches by active task type."""
+        task_stack = self.memory.get_task_stack(self.user_id)
+        active = task_stack.active_task
 
-        if not pending:
+        if not active:
             return "Nothing to cancel."
 
-        name = pending.name
-        self.memory.cancel_pending(self.user_id)
+        if active.task_type in (TaskType.INTRO_DRAFT, TaskType.FOLLOWUP_SETUP):
+            label = active.label or active.task_type.value
+            resumed = task_stack.cancel_active()
+            # Restore legacy fields if a parked contact_draft was resumed
+            mem = self.memory.get_memory(self.user_id)
+            if (resumed and resumed.task_type == TaskType.CONTACT_DRAFT
+                    and isinstance(resumed.slots, ContactDraftSlots)
+                    and resumed.slots.contact):
+                mem.pending_contact = resumed.slots.contact
+                mem.current_contact = resumed.slots.contact
+                mem.state = ConversationState.COLLECTING
+            logger.info(f"[TOOL] cancel_current: Cancelled {label}")
+            msg = f"Dropped {label}."
+            if resumed:
+                msg += f" Back to {resumed.label}."
+            else:
+                msg += " Ready whenever you are."
+            return msg
+
+        # CONTACT_DRAFT or fallback — use existing memory.cancel_pending()
+        pending = self.memory.get_pending_contact(self.user_id)
+        name = pending.name if pending else "draft"
+        resumed = self.memory.cancel_pending(self.user_id)
 
         logger.info(f"[TOOL] cancel_current: Cancelled {name}")
-        return f"Dropped {name}. Ready whenever you are."
+        msg = f"Dropped {name}."
+        if resumed:
+            msg += f" Back to {resumed.label}."
+        else:
+            msg += " Ready whenever you are."
+        return msg
 
     async def get_last_summary(self) -> str:
         """Get the last generated summary (for adding to descriptions)."""

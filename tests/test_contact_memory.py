@@ -1,6 +1,12 @@
 """Tests for services/contact_memory.py — ContactMemoryService lifecycle."""
 
-from services.contact_memory import ContactMemoryService, ConversationState
+from unittest.mock import patch
+import pytest
+
+from services.contact_memory import (
+    ContactMemoryService, ConversationState,
+    TaskType, TaskStatus, ActiveTask, IntroDraftSlots, ContactDraftSlots,
+)
 from data.schema import Contact
 
 
@@ -94,3 +100,118 @@ class TestExpiryCleanup:
         new_mem = svc.get_memory("stale_user")
         assert new_mem.state == ConversationState.IDLE
         assert new_mem.pending_contact is None
+
+
+class TestTaskStack:
+    """Tests for task-stack dialog orchestration."""
+
+    def test_park_switch_contact_draft(self):
+        svc = ContactMemoryService()
+        ryan = Contact(full_name="Ryan")
+        ahmed = Contact(full_name="Ahmed")
+        svc.start_collecting("ts1", ryan)
+        svc.start_collecting("ts1", ahmed)
+        mem = svc.get_memory("ts1")
+        # Ahmed is active, Ryan is parked
+        active = mem.task_stack.active_task
+        assert active.task_type == TaskType.CONTACT_DRAFT
+        assert active.slots.contact.name == "Ahmed"
+        parked = mem.task_stack.get_parked_tasks()
+        assert len(parked) == 1
+        assert parked[0].slots.contact.name == "Ryan"
+        assert mem.pending_contact.name == "Ahmed"
+
+    def test_save_active_resumes_parked(self):
+        svc = ContactMemoryService()
+        ryan = Contact(full_name="Ryan")
+        ahmed = Contact(full_name="Ahmed")
+        svc.start_collecting("ts2", ryan)
+        svc.start_collecting("ts2", ahmed)
+        svc.hard_reset("ts2", "Ahmed")
+        mem = svc.get_memory("ts2")
+        # Ahmed is locked, Ryan is restored as pending/current/COLLECTING
+        assert "ahmed" in mem.locked_contacts
+        assert mem.pending_contact is not None
+        assert mem.pending_contact.name == "Ryan"
+        assert mem.current_contact.name == "Ryan"
+        assert mem.state == ConversationState.COLLECTING
+
+    def test_draft_intro_save_commits(self):
+        svc = ContactMemoryService()
+        mem = svc.get_memory("ts3")
+        intro_task = ActiveTask(
+            task_type=TaskType.INTRO_DRAFT,
+            status=TaskStatus.ACTIVE,
+            slots=IntroDraftSlots(connector="Alice", target="Bob"),
+            label="Intro: Alice → Bob",
+        )
+        mem.task_stack.push(intro_task)
+        mem.task_stack.complete_active()
+        # Stack empty, no side effects on pending
+        assert mem.task_stack.active_task is None
+        assert mem.pending_contact is None
+
+    def test_draft_intro_cancel_resumes_parked_contact(self):
+        svc = ContactMemoryService()
+        ryan = Contact(full_name="Ryan")
+        svc.start_collecting("ts4", ryan)
+        mem = svc.get_memory("ts4")
+        intro_task = ActiveTask(
+            task_type=TaskType.INTRO_DRAFT,
+            status=TaskStatus.ACTIVE,
+            slots=IntroDraftSlots(connector="Alice", target="Bob"),
+            label="Intro: Alice → Bob",
+        )
+        mem.task_stack.push(intro_task)
+        # Ryan should be parked now
+        assert mem.task_stack.active_task.task_type == TaskType.INTRO_DRAFT
+        # Cancel the intro — Ryan should resume
+        resumed = mem.cancel_pending()
+        assert resumed is not None
+        assert resumed.task_type == TaskType.CONTACT_DRAFT
+        assert resumed.slots.contact.name == "Ryan"
+        assert mem.pending_contact.name == "Ryan"
+        assert mem.current_contact.name == "Ryan"
+        assert mem.state == ConversationState.COLLECTING
+
+    @patch("services.agent_tools.find_contact_in_storage", return_value=None)
+    def test_workflow_status_active(self, mock_storage):
+        from services.agent_tools import AgentTools
+        svc = ContactMemoryService()
+        ryan = Contact(full_name="Ryan")
+        svc.start_collecting("ts5", ryan)
+        tools = AgentTools("ts5")
+        tools.memory = svc
+        result = pytest.importorskip("asyncio").get_event_loop().run_until_complete(
+            tools.get_workflow_status("Ryan")
+        )
+        assert "still being edited" in result
+
+    @patch("services.agent_tools.find_contact_in_storage", return_value=None)
+    def test_workflow_status_parked(self, mock_storage):
+        from services.agent_tools import AgentTools
+        svc = ContactMemoryService()
+        ryan = Contact(full_name="Ryan")
+        ahmed = Contact(full_name="Ahmed")
+        svc.start_collecting("ts6", ryan)
+        svc.start_collecting("ts6", ahmed)
+        tools = AgentTools("ts6")
+        tools.memory = svc
+        result = pytest.importorskip("asyncio").get_event_loop().run_until_complete(
+            tools.get_workflow_status("Ryan")
+        )
+        assert "parked" in result.lower()
+
+    @patch("services.agent_tools.find_contact_in_storage", return_value=None)
+    def test_workflow_status_saved(self, mock_storage):
+        from services.agent_tools import AgentTools
+        svc = ContactMemoryService()
+        ryan = Contact(full_name="Ryan")
+        svc.start_collecting("ts7", ryan)
+        svc.hard_reset("ts7", "Ryan")
+        tools = AgentTools("ts7")
+        tools.memory = svc
+        result = pytest.importorskip("asyncio").get_event_loop().run_until_complete(
+            tools.get_workflow_status("Ryan")
+        )
+        assert "saved" in result.lower()

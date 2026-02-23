@@ -323,6 +323,16 @@ class UserMemory:
         self.pending_contact = None
         self.current_contact = None
         self.state = ConversationState.IDLE
+
+        # If a parked contact_draft was resumed by complete_active(), restore legacy fields
+        resumed = self.task_stack.active_task
+        if (resumed and resumed.task_type == TaskType.CONTACT_DRAFT
+                and isinstance(resumed.slots, ContactDraftSlots)
+                and resumed.slots.contact):
+            self.pending_contact = resumed.slots.contact
+            self.current_contact = resumed.slots.contact
+            self.state = ConversationState.COLLECTING
+
         self.touch()
 
     def is_contact_locked(self, name: str) -> bool:
