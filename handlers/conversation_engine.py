@@ -1512,6 +1512,37 @@ async def process_message(user_id: str, message: str) -> MessageResponse:
     if not message:
         return MessageResponse.plain("I didn't catch that. Could you try again?")
 
+    # --- Shortcut bypass: cancel/save work even when OpenAI is down ---
+    msg_lower = message.strip().lower()
+
+    if msg_lower in ("cancel", "/cancel"):
+        from services.contact_memory import get_memory_service as _get_mem
+        mem = _get_mem()
+        pending = mem.get_pending_contact(user_id)
+        if pending:
+            name = pending.name
+            memory_obj = mem.get_memory(user_id)
+            resumed = memory_obj.cancel_pending()
+            text = f"Dropped {name}."
+            if resumed and resumed.label:
+                text += f" Resuming: {resumed.label}."
+            else:
+                text += " Ready whenever you are."
+            return MessageResponse.plain(text)
+        return MessageResponse.plain("Nothing to cancel.")
+
+    if msg_lower in ("done", "save", "/save"):
+        from services.contact_memory import get_memory_service as _get_mem
+        from services.agent_tools import AgentTools
+        mem = _get_mem()
+        if mem.get_pending_contact(user_id):
+            tools = AgentTools(user_id)
+            result = await tools.save_contact()
+            if isinstance(result, MessageResponse):
+                return result
+            return MessageResponse.plain(result)
+        # No pending contact — fall through to agent for normal handling
+
     try:
         # Use the new agent-based architecture
         from services.agent import process_with_agent

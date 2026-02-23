@@ -21,6 +21,140 @@ class ConversationState(Enum):
     CONFIRMING = "confirming"  # Showing summary, waiting for save confirmation
 
 
+# === Task-Stack Dialog Orchestration ===
+
+class TaskType(Enum):
+    CONTACT_DRAFT = "contact_draft"
+    INTRO_DRAFT = "intro_draft"
+    FOLLOWUP_SETUP = "followup_setup"
+
+
+class TaskStatus(Enum):
+    ACTIVE = "active"
+    PARKED = "parked"
+
+
+@dataclass
+class ContactDraftSlots:
+    contact: Optional[Contact] = None
+    original_name: Optional[str] = None
+
+
+@dataclass
+class IntroDraftSlots:
+    connector: Optional[str] = None
+    target: Optional[str] = None
+    reason: Optional[str] = None
+    draft_message: Optional[str] = None
+
+
+@dataclass
+class FollowupSetupSlots:
+    contact_name: Optional[str] = None
+    date: Optional[str] = None
+    reason: Optional[str] = None
+
+
+@dataclass
+class ActiveTask:
+    task_type: TaskType
+    status: TaskStatus
+    slots: Any  # ContactDraftSlots | IntroDraftSlots | FollowupSetupSlots
+    created_at: datetime = field(default_factory=datetime.now)
+    label: str = ""
+
+
+class TaskStack:
+    """Stack of active/parked tasks with max depth 3."""
+
+    MAX_DEPTH = 3
+
+    def __init__(self):
+        self._tasks: List[ActiveTask] = []
+
+    @property
+    def active_task(self) -> Optional[ActiveTask]:
+        """Top ACTIVE task."""
+        for t in reversed(self._tasks):
+            if t.status == TaskStatus.ACTIVE:
+                return t
+        return None
+
+    def push(self, task: ActiveTask):
+        """Park current active, push new as ACTIVE."""
+        current = self.active_task
+        if current:
+            current.status = TaskStatus.PARKED
+        self._tasks.append(task)
+        # Enforce max depth — drop oldest parked if exceeded
+        while len(self._tasks) > self.MAX_DEPTH:
+            for i, t in enumerate(self._tasks):
+                if t.status == TaskStatus.PARKED:
+                    self._tasks.pop(i)
+                    break
+            else:
+                break
+
+    def complete_active(self) -> Optional[ActiveTask]:
+        """Remove active task; resume top parked."""
+        active = self.active_task
+        if active:
+            self._tasks.remove(active)
+        resumed = self._resume_top_parked()
+        return resumed
+
+    def cancel_active(self) -> Optional[ActiveTask]:
+        """Remove active task; resume top parked."""
+        return self.complete_active()
+
+    def park_active(self):
+        """Park without removing."""
+        active = self.active_task
+        if active:
+            active.status = TaskStatus.PARKED
+
+    def find_parked_by_name(self, name: str) -> Optional[ActiveTask]:
+        """Find parked contact_draft by contact name."""
+        if not name:
+            return None
+        name_lower = name.lower()
+        for t in self._tasks:
+            if (t.status == TaskStatus.PARKED
+                    and t.task_type == TaskType.CONTACT_DRAFT
+                    and isinstance(t.slots, ContactDraftSlots)
+                    and t.slots.contact
+                    and t.slots.contact.name
+                    and name_lower in t.slots.contact.name.lower()):
+                return t
+        return None
+
+    def get_parked_tasks(self) -> List[ActiveTask]:
+        return [t for t in self._tasks if t.status == TaskStatus.PARKED]
+
+    def summary(self) -> str:
+        """One-line string for system prompt."""
+        active = self.active_task
+        parked = self.get_parked_tasks()
+        parts = []
+        if active:
+            parts.append(f"Active: {active.label} ({active.task_type.value})")
+        if parked:
+            parked_labels = [t.label for t in parked]
+            parts.append(f"Parked: {', '.join(parked_labels)}")
+        return " | ".join(parts) if parts else "No active tasks"
+
+    def clear(self):
+        self._tasks.clear()
+
+    def _resume_top_parked(self) -> Optional[ActiveTask]:
+        """Resume the most recently parked task."""
+        for t in reversed(self._tasks):
+            if t.status == TaskStatus.PARKED:
+                t.status = TaskStatus.ACTIVE
+                return t
+        return None
+
+
 @dataclass
 class UserMemory:
     """Memory state for a single user."""
@@ -36,6 +170,7 @@ class UserMemory:
     message_count: int = 0
     state: ConversationState = ConversationState.IDLE
     auto_saved: bool = False  # Flag to notify user if contact was auto-saved
+    task_stack: TaskStack = field(default_factory=TaskStack)
 
     # Settings - use config values with fallback defaults
     MAX_RECENT_CONTACTS = 10
@@ -112,6 +247,17 @@ class UserMemory:
 
     def start_collecting(self, contact: Contact):
         """Start collecting info for a new contact (not saved yet)."""
+        # Dual-write: push CONTACT_DRAFT task
+        slots = ContactDraftSlots(contact=contact, original_name=contact.name if contact else None)
+        label = f"Editing {contact.name}" if contact and contact.name else "Editing contact"
+        task = ActiveTask(
+            task_type=TaskType.CONTACT_DRAFT,
+            status=TaskStatus.ACTIVE,
+            slots=slots,
+            label=label,
+        )
+        self.task_stack.push(task)
+
         self.pending_contact = contact
         self.current_contact = contact  # Also set as current for context
         self.state = ConversationState.COLLECTING
@@ -146,6 +292,7 @@ class UserMemory:
 
     def clear_pending(self):
         """Clear the pending contact after saving."""
+        self.task_stack.complete_active()
         self.pending_contact = None
         self.state = ConversationState.IDLE
         self.touch()
@@ -155,6 +302,8 @@ class UserMemory:
         HARD RESET: Clear all active context after a save.
         This prevents data corruption when switching to a new contact.
         """
+        self.task_stack.complete_active()
+
         # Lock the saved contact
         if saved_contact_name:
             saved_contact_name_lower = saved_contact_name.lower()
@@ -207,8 +356,9 @@ class UserMemory:
         """Get list of locked contact names."""
         return [c.name for c in self.locked_contacts.values() if c.name]
 
-    def cancel_pending(self):
-        """Cancel and discard the pending contact."""
+    def cancel_pending(self) -> Optional['ActiveTask']:
+        """Cancel and discard the pending contact. Returns resumed task if any."""
+        resumed = self.task_stack.cancel_active()
         if self.pending_contact and self.pending_contact.name:
             # Remove from recent since it was never saved
             name_lower = self.pending_contact.name.lower()
@@ -217,7 +367,15 @@ class UserMemory:
         self.pending_contact = None
         self.current_contact = None
         self.state = ConversationState.IDLE
+
+        # If a parked contact_draft was resumed, restore legacy fields
+        if resumed and resumed.task_type == TaskType.CONTACT_DRAFT and isinstance(resumed.slots, ContactDraftSlots) and resumed.slots.contact:
+            self.pending_contact = resumed.slots.contact
+            self.current_contact = resumed.slots.contact
+            self.state = ConversationState.COLLECTING
+
         self.touch()
+        return resumed
 
     def is_collecting(self) -> bool:
         """Check if we're currently collecting info for a contact."""
@@ -424,6 +582,14 @@ class ContactMemoryService:
     def get_locked_contacts(self, user_id: str) -> List[str]:
         """Get list of locked contact names for a user."""
         return self.get_memory(user_id).get_locked_contact_names()
+
+    def get_active_task(self, user_id: str) -> Optional[ActiveTask]:
+        """Get the currently active task from the task stack."""
+        return self.get_memory(user_id).task_stack.active_task
+
+    def get_task_stack(self, user_id: str) -> TaskStack:
+        """Get the full task stack for a user."""
+        return self.get_memory(user_id).task_stack
 
     def get_state(self, user_id: str) -> ConversationState:
         """Get the current conversation state for a user."""

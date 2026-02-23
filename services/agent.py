@@ -8,10 +8,10 @@ import logging
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 
-from openai import OpenAI
+from openai import OpenAI, RateLimitError
 
 from config import APIConfig, AIConfig
-from services.contact_memory import get_memory_service, ConversationState
+from services.contact_memory import get_memory_service, ConversationState, TaskType
 from services.message_response import MessageResponse
 from services.agent_tools import (
     AgentTools, _user_search_results, _user_summaries,
@@ -256,12 +256,41 @@ AGENT_TOOLS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_workflow_status",
+            "description": "Check the status of a task or person in the workflow. Use when user asks 'Did you save X?', 'What am I working on?', 'Is X saved?', 'Status'. Returns whether a contact is being edited, parked, saved, or not found.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Name of the person to check status for (optional — omit to see all active/parked tasks)"}
+                }
+            }
+        }
+    },
     # V3 Phase 2 Tools - Introductions, Digest, Search
     {
         "type": "function",
         "function": {
+            "name": "draft_introduction",
+            "description": "Draft an introduction between two contacts. Creates a draft that must be confirmed with 'save'. Use when user says 'introduce X to Y' or 'connect X with Y'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "connector": {"type": "string", "description": "Person who can make/facilitate the intro"},
+                    "target": {"type": "string", "description": "Person to be introduced"},
+                    "reason": {"type": "string", "description": "Why this intro makes sense"}
+                },
+                "required": ["connector", "target"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "create_introduction",
-            "description": "Create an introduction between two contacts. Logs it in the Introductions table and drafts an intro message. Use when user says 'introduce X to Y' or 'connect X with Y'.",
+            "description": "Alias for draft_introduction. Draft an introduction between two contacts.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -385,6 +414,8 @@ def build_system_prompt(user_id: str) -> str:
     
     pending = memory.get_pending_contact(user_id)
     state = memory.get_state(user_id)
+    task_stack = memory.get_task_stack(user_id)
+    active_task = task_stack.active_task
 
     # Build current contact context
     current_contact_str = "None"
@@ -395,6 +426,19 @@ def build_system_prompt(user_id: str) -> str:
         if pending.company:
             parts.append(f"at {pending.company}")
         current_contact_str = " ".join(parts)
+
+    # Build task context
+    task_context = active_task.label if active_task else "None"
+    task_needs = ""
+    if active_task and active_task.task_type == TaskType.CONTACT_DRAFT and pending:
+        from utils.formatters import contact_missing_fields
+        missing = contact_missing_fields(pending)
+        task_needs = f"still need: {', '.join(missing)}" if missing else "all key fields filled"
+    elif active_task:
+        task_needs = f"task type: {active_task.task_type.value}"
+
+    parked_tasks = task_stack.get_parked_tasks()
+    parked_context = ", ".join(t.label for t in parked_tasks) if parked_tasks else "None"
 
     # Get recent conversation context (last 10 messages for compact prompt)
     recent_context = conversation_store.format_recent_context(user_id, limit=10)
@@ -408,11 +452,12 @@ def build_system_prompt(user_id: str) -> str:
     return f"""You are Rover 🐕 — a sharp, witty network nurturing AI with serious swagger. Think of yourself as the user's networking wingman who actually remembers everyone and never drops the ball. You're part CRM, part relationship coach, part hype man.
 
 **CURRENT SESSION:**
+- Active task: {task_context}
+- What's needed: {task_needs}
+- Parked tasks: {parked_context}
 - Contact being edited: {current_contact_str}
-- Last contact mentioned: {last_contact}
-- Last action: {last_action}
-- State: {state.value}
-- Search results available: {has_search}
+- Last contact: {last_contact}
+- Search results: {has_search}
 
 **RECENT CONVERSATION:**
 {recent_context}
@@ -421,17 +466,20 @@ def build_system_prompt(user_id: str) -> str:
 Contact Management: add_contact, update_contact, update_existing_contact, save_contact, get_contact, list_contacts, cancel_current
 Research: search_web, enrich_contact, summarize_search_results, get_search_links, linkedin_lookup
 Relationships: log_interaction, set_follow_up, get_follow_ups, get_relationship_health
-Introductions: create_introduction, get_introductions, suggest_introductions
+Introductions: draft_introduction, create_introduction, get_introductions, suggest_introductions
+Workflow: get_workflow_status
 Intelligence: get_daily_digest, get_weekly_report, search_contacts
 Outreach: draft_emails
 
 **KEY RULES:**
 1. When editing a contact, use update_contact. When updating a saved contact, use update_existing_contact(name=...)
-2. "Done"/"Save"/"Finish" → call save_contact immediately
+2. "Save"/"Done" → call save_contact (commits the ACTIVE task — contact, intro, or follow-up)
 3. Enrichment AUTO-APPLIES data — confirm what was found. Distinguish "confirmed" (strong match) from "likely" (needs verification). Never present uncertain data as fact.
 4. Extract clean values: "He's the CEO" → title="CEO" (not "He's the CEO")
 5. Person vs Company: "John is CEO at Apple" → name="John", title="CEO", company="Apple" (NOT name="Apple"!)
 6. After save_contact(), the contact is LOCKED - new attributes belong to NEW contacts only
+7. "Did you save X?" / "Status" / "What am I working on?" → use get_workflow_status
+8. If user starts a new task while another is active, ASK before switching (park/switch buttons will appear)
 
 **RESPONSE STRUCTURE (MANDATORY):**
 Every response MUST have:
@@ -451,7 +499,7 @@ NEVER give a question with no confirmation of what was done.
 - "How's my relationship with X?" → use get_relationship_health
 
 **INTRODUCTIONS:**
-- "Introduce X to Y" → use create_introduction
+- "Introduce X to Y" → use draft_introduction (creates a draft, user confirms with 'save')
 - "Show my introductions" → use get_introductions
 - "Suggest intros" → use suggest_introductions
 
@@ -565,6 +613,8 @@ class RoverAgent:
 
             try:
                 response = self._call_llm()
+            except RateLimitError:
+                return MessageResponse.plain("OpenAI is busy right now. Try again in a few seconds.")
             except Exception as e:
                 logger.error(f"[AGENT] LLM call error: {e}")
                 return MessageResponse.plain("Sorry, I had trouble processing that. Please try again.")
@@ -641,17 +691,41 @@ class RoverAgent:
         return MessageResponse.plain(final_text)
 
     def _call_llm(self):
-        """Call the OpenAI API with function calling."""
-        client = self._get_client()
+        """Call the OpenAI API with function calling.
 
-        return client.chat.completions.create(
-            model=AIConfig.OPENAI_MODEL,
-            messages=self.messages,
-            tools=AGENT_TOOLS,
-            tool_choice="auto",
-            temperature=0.3,
-            max_tokens=1000
-        )
+        Retries up to 3 times on the primary model with exponential backoff,
+        then falls back to OPENAI_FALLBACK_MODEL for another 3 attempts.
+        Raises RateLimitError if all attempts are exhausted.
+        """
+        import time
+
+        client = self._get_client()
+        attempts = [
+            (AIConfig.OPENAI_MODEL, [0, 2, 4]),
+            (AIConfig.OPENAI_FALLBACK_MODEL, [0, 2, 4]),
+        ]
+
+        last_exc = None
+        for model, delays in attempts:
+            for delay in delays:
+                if delay:
+                    logger.info(f"[AGENT] Rate limited, retrying {model} in {delay}s...")
+                    time.sleep(delay)
+                try:
+                    return client.chat.completions.create(
+                        model=model,
+                        messages=self.messages,
+                        tools=AGENT_TOOLS,
+                        tool_choice="auto",
+                        temperature=0.3,
+                        max_tokens=1000,
+                    )
+                except RateLimitError as e:
+                    last_exc = e
+                    logger.warning(f"[AGENT] RateLimitError on {model}: {e}")
+                    continue
+
+        raise last_exc
 
 
 async def process_with_agent(user_id: str, message: str) -> str:

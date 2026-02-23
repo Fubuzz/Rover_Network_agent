@@ -52,6 +52,19 @@ async def _send_response(query, response):
         await _safe_reply(query.message, response)
 
 
+async def _edit_or_send(query, status_msg, response):
+    """Edit progress message with result, or send new message if edit fails."""
+    text = response.text if isinstance(response, MessageResponse) else response
+    markup = _build_keyboard(response.buttons) if isinstance(response, MessageResponse) and response.buttons else None
+    if status_msg:
+        try:
+            await status_msg.edit_text(text, parse_mode="Markdown", reply_markup=markup)
+            return
+        except BadRequest:
+            pass
+    await _safe_reply(query.message, text, reply_markup=markup)
+
+
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle all inline keyboard button presses."""
     query = update.callback_query
@@ -73,12 +86,22 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("enrich:"):
         name = data[7:]
+        status_msg = None
+        try:
+            status_msg = await query.message.reply_text("Researching... this may take a moment.")
+        except Exception:
+            pass
         response = await process_message(user_id, f"enrich {name}")
-        await _send_response(query, response)
+        await _edit_or_send(query, status_msg, response)
 
     elif data == "enrich_current":
+        status_msg = None
+        try:
+            status_msg = await query.message.reply_text("Researching... this may take a moment.")
+        except Exception:
+            pass
         response = await process_message(user_id, "enrich")
-        await _send_response(query, response)
+        await _edit_or_send(query, status_msg, response)
 
     elif data == "add_new":
         await _safe_reply(query.message, "Ready for your next contact! Just say _'Add [Name]'_.")
@@ -95,6 +118,28 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("readd:"):
         name = data[6:]
         response = await process_message(user_id, f"add {name}")
+        await _send_response(query, response)
+
+    elif data.startswith("park_switch:"):
+        new_name = data[len("park_switch:"):]
+        # Park the active task, then process add for the new name
+        from services.contact_memory import get_memory_service as _get_mem, ConversationState as _CS
+        mem = _get_mem()
+        task_stack = mem.get_task_stack(user_id)
+        task_stack.park_active()
+        # Clear legacy fields so add_contact doesn't see a pending contact
+        memory_obj = mem.get_memory(user_id)
+        memory_obj.pending_contact = None
+        memory_obj.current_contact = None
+        memory_obj.state = _CS.IDLE
+        response = await process_message(user_id, f"add {new_name}")
+        await _send_response(query, response)
+
+    elif data.startswith("cancel_switch:"):
+        new_name = data[len("cancel_switch:"):]
+        # Cancel the active task, then process add for the new name
+        await process_message(user_id, "cancel")
+        response = await process_message(user_id, f"add {new_name}")
         await _send_response(query, response)
 
     elif data == "undo":

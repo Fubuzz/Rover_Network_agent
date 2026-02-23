@@ -16,7 +16,11 @@ import re
 import time
 from typing import Optional, Dict, Any, List
 
-from services.contact_memory import get_memory_service, ConversationState
+from services.contact_memory import (
+    get_memory_service, ConversationState,
+    TaskType, TaskStatus, IntroDraftSlots, FollowupSetupSlots,
+    ActiveTask,
+)
 from utils.validators import validate_and_clean_field
 from utils.formatters import contact_draft_card, contact_missing_fields
 from services.airtable_service import get_sheets_service
@@ -280,7 +284,17 @@ class AgentTools:
         if self.memory.is_collecting(self.user_id):
             pending = self.memory.get_pending_contact(self.user_id)
             if pending:
-                return f"Still working on {pending.name}. Say 'save' to keep them, or 'cancel' to start fresh."
+                # Same person? Just keep editing
+                if _normalize_name(name) == _normalize_name(pending.name):
+                    return f"Already editing {pending.name}. Share details or say 'save'."
+                # Different person — offer park/switch
+                return MessageResponse(
+                    text=f"Currently editing **{pending.name}**. What do you want to do?",
+                    buttons=[
+                        [("Park & Switch", f"park_switch:{name}"), ("Save First", "save")],
+                        [("Cancel & Switch", f"cancel_switch:{name}"), ("Stay", "dismiss")],
+                    ],
+                )
 
         # Early duplicate detection
         existing = find_contact_in_storage(name)
@@ -429,6 +443,19 @@ class AgentTools:
 
     async def save_contact(self) -> str:
         """
+        Task-scoped save dispatcher.
+        Routes to the correct save handler based on the active task type.
+        """
+        active = self.memory.get_active_task(self.user_id)
+        if active and active.task_type == TaskType.INTRO_DRAFT:
+            return await self._confirm_intro_draft(active)
+        if active and active.task_type == TaskType.FOLLOWUP_SETUP:
+            return await self._commit_followup(active)
+        # Default: contact save (original logic)
+        return await self._save_contact_draft()
+
+    async def _save_contact_draft(self) -> str:
+        """
         Save the current contact to the database.
 
         CRITICAL: This reads from MEMORY, not from LLM arguments.
@@ -482,7 +509,7 @@ class AgentTools:
             _user_last_action[self.user_id] = f"saved contact '{saved_name}'"
 
             logger.info(f"[TOOL] save_contact: Saved {saved_name}. Session cleared.")
-            
+
             # Trigger auto-enrichment in background (if enabled)
             import os
             if os.getenv("AUTO_ENRICH_ENABLED", "true").lower() == "true":
@@ -494,9 +521,15 @@ class AgentTools:
                     logger.info(f"[TOOL] Auto-enrichment triggered for {saved_name}" + (" (with LinkedIn)" if linkedin else ""))
                 except Exception as e:
                     logger.warning(f"[TOOL] Auto-enrichment trigger failed: {e}")
-            
+
+            # Check if a parked task was resumed
+            resumed = self.memory.get_active_task(self.user_id)
+            text = f"{saved_name} saved ✅\n\n{format_contact_card(saved_contact)}"
+            if resumed and resumed.label:
+                text += f"\n\nResuming: {resumed.label}"
+
             return MessageResponse(
-                text=f"{saved_name} saved ✅\n\n{format_contact_card(saved_contact)}",
+                text=text,
                 buttons=[[("Enrich", f"enrich:{saved_name}"), ("Add Another", "add_new")]]
             )
 
@@ -504,6 +537,66 @@ class AgentTools:
         if error_msg:
             return f"⚠️ {error_msg}"
         return f"Failed to save {pending.name}. Please try again."
+
+    async def _confirm_intro_draft(self, task) -> str:
+        """Commit an IntroDraftSlots task to Airtable."""
+        slots = task.slots
+        if not isinstance(slots, IntroDraftSlots):
+            return "No introduction draft to confirm."
+
+        from services.introduction_service import get_introduction_service
+        intro_svc = get_introduction_service()
+
+        record_id = intro_svc.create_introduction(
+            connector_name=slots.connector,
+            target_name=slots.target,
+            reason=slots.reason,
+            status="suggested",
+            intro_message=slots.draft_message,
+        )
+
+        # Complete the task on the stack
+        task_stack = self.memory.get_task_stack(self.user_id)
+        resumed = task_stack.complete_active()
+
+        if record_id:
+            # Update contacts' intro fields
+            try:
+                sheets = get_sheets_service()
+                sheets._ensure_initialized()
+                if slots.connector:
+                    sheets.update_contact(slots.connector, {"introduced_to": slots.target or ""})
+                if slots.target:
+                    sheets.update_contact(slots.target, {"introduced_by": slots.connector or ""})
+            except Exception as e:
+                logger.warning(f"Could not update intro fields: {e}")
+
+            text = f"Introduction confirmed ✅\n\n**{slots.connector}** → **{slots.target}**"
+            if slots.reason:
+                text += f"\nReason: {slots.reason}"
+            if resumed and resumed.label:
+                text += f"\n\nResuming: {resumed.label}"
+            return text
+
+        return f"Failed to confirm introduction between {slots.connector} and {slots.target}."
+
+    async def _commit_followup(self, task) -> str:
+        """Commit a FollowupSetupSlots task."""
+        slots = task.slots
+        if not isinstance(slots, FollowupSetupSlots):
+            return "No follow-up to commit."
+
+        result = await self.set_follow_up(
+            name=slots.contact_name or "",
+            date=slots.date or "",
+            reason=slots.reason,
+        )
+
+        # Complete the task on the stack
+        task_stack = self.memory.get_task_stack(self.user_id)
+        task_stack.complete_active()
+
+        return result
 
     async def undo_last_save(self) -> str:
         """Delete the last saved contact (undo)."""
@@ -531,20 +624,48 @@ class AgentTools:
         """Search the web for information about a company or person."""
         logger.info(f"[TOOL] search_web: query='{query}'")
 
+        # --- Local-first: check contacts already in the network ---
+        local_matches = []
+        try:
+            sheets = get_sheets_service()
+            sheets._ensure_initialized()
+            all_contacts = sheets.get_all_contacts()
+            query_lower = query.lower()
+            for c in (all_contacts or []):
+                name_match = query_lower in (c.name or "").lower()
+                company_match = query_lower in (c.company or "").lower()
+                if name_match or company_match:
+                    parts = [f"**{c.name}**"]
+                    if c.title:
+                        parts.append(c.title)
+                    if c.company:
+                        parts.append(f"at {c.company}")
+                    if c.email:
+                        parts.append(f"({c.email})")
+                    local_matches.append(" — ".join(parts))
+                    if len(local_matches) >= 3:
+                        break
+        except Exception as e:
+            logger.warning(f"[TOOL] Local contact search failed (continuing): {e}")
+
         enrichment = get_enrichment_service()
 
         # Check if search is available
         if not enrichment.is_available():
             error = enrichment.get_last_error()
             if error and "Invalid API key" in error:
+                if local_matches:
+                    return "**From your network:**\n" + "\n".join(f"• {m}" for m in local_matches)
                 return "Search unavailable - API key needs to be configured."
+            if local_matches:
+                return "**From your network:**\n" + "\n".join(f"• {m}" for m in local_matches)
             return "Search service is currently unavailable."
 
         try:
             results = enrichment.search_company(query)
             search_results = results.get('search_results', [])[:5]
 
-            if not search_results:
+            if not search_results and not local_matches:
                 return f"No results found for '{query}'."
 
             # Store for later summarization and context
@@ -568,10 +689,19 @@ class AgentTools:
                 else:
                     formatted.append(f"{i}. {title}\n   {snippet}")
 
-            return f"Search results for '{query}':\n\n" + "\n\n".join(formatted)
+            result = f"Search results for '{query}':\n\n" + "\n\n".join(formatted)
+
+            # Prepend local matches if any
+            if local_matches:
+                local_section = "**From your network:**\n" + "\n".join(f"• {m}" for m in local_matches[:3])
+                result = local_section + "\n\n" + result
+
+            return result
 
         except Exception as e:
             logger.error(f"Search error: {e}")
+            if local_matches:
+                return "**From your network:**\n" + "\n".join(f"• {m}" for m in local_matches) + f"\n\n(Web search failed: {e})"
             return f"Error searching for '{query}': {str(e)}"
 
     async def list_contacts(self, limit: int = 10) -> str:
@@ -748,6 +878,9 @@ Provide a brief, informative summary suitable for a contact profile."""
         success = update_contact_in_storage(name, updates)
 
         if success:
+            # Refresh in-memory cache so "show [name]" returns fresh data
+            self.memory.update_contact_by_name(self.user_id, name, updates)
+
             FIELD_LABELS = {
                 'title': 'title', 'company': 'company', 'email': 'email',
                 'phone': 'phone', 'linkedin_url': 'LinkedIn', 'contact_type': 'type',
@@ -1162,7 +1295,61 @@ Provide a brief, informative summary suitable for a contact profile."""
             return "No contact draft in progress."
 
         return f"**Draft Status for {pending.name}:**\n\n{contact_draft_card(pending)}"
-    
+
+    async def get_workflow_status(self, name: str = None) -> str:
+        """
+        Check the status of a task or person in the workflow.
+        Answers questions like "Did you save Ryan?" or "What am I working on?"
+        """
+        task_stack = self.memory.get_task_stack(self.user_id)
+
+        if name:
+            name_lower = name.lower()
+            # 1. Active contact_draft with that name?
+            active = task_stack.active_task
+            if (active and active.task_type == TaskType.CONTACT_DRAFT
+                    and hasattr(active.slots, 'contact') and active.slots.contact
+                    and active.slots.contact.name
+                    and name_lower in active.slots.contact.name.lower()):
+                missing = contact_missing_fields(active.slots.contact)
+                missing_str = f" Still need: {', '.join(missing)}." if missing else " All key fields filled."
+                return f"{active.slots.contact.name} is still being edited (not saved yet).{missing_str}"
+
+            # 2. Parked task with that name?
+            parked = task_stack.find_parked_by_name(name)
+            if parked and hasattr(parked.slots, 'contact') and parked.slots.contact:
+                return f"{parked.slots.contact.name} is parked (paused). Another task is active right now."
+
+            # 3. Locked contacts?
+            mem = self.memory.get_memory(self.user_id)
+            for locked_name, locked_contact in mem.locked_contacts.items():
+                if name_lower in locked_name:
+                    display_name = locked_contact.name if locked_contact.name else name
+                    return f"{display_name} is saved ✅"
+
+            # 4. Storage lookup?
+            stored = find_contact_in_storage(name)
+            if stored:
+                return f"{stored.name} is in your network ✅"
+
+            # 5. Not found
+            return f"I don't have anyone named {name} in progress or saved."
+
+        # No name — return summary of active + parked
+        active = task_stack.active_task
+        parked = task_stack.get_parked_tasks()
+
+        if not active and not parked:
+            return "No active tasks right now. Ready for your next move."
+
+        parts = []
+        if active:
+            parts.append(f"**Active:** {active.label}")
+        if parked:
+            for t in parked:
+                parts.append(f"**Parked:** {t.label}")
+        return "\n".join(parts)
+
     async def log_interaction(self, name: str, interaction_type: str, context: str = None) -> str:
         """
         Log an interaction with a contact.
@@ -1424,51 +1611,51 @@ Provide a brief, informative summary suitable for a contact profile."""
 
     # === PHASE 2 TOOLS ===
 
-    async def create_introduction(self, connector: str, target: str, reason: str = None) -> str:
+    async def draft_introduction(self, connector: str, target: str, reason: str = None) -> str:
         """
-        Create an introduction between two contacts.
-        
-        Args:
-            connector: Person who can make/facilitate the intro
-            target: Person to be introduced
-            reason: Why this intro makes sense
+        Draft an introduction between two contacts (does NOT commit immediately).
+        Pushes an INTRO_DRAFT task — user must say "save" to confirm.
         """
-        logger.info(f"[TOOL] create_introduction: {connector} → {target}")
-        
+        logger.info(f"[TOOL] draft_introduction: {connector} → {target}")
+
         from services.introduction_service import get_introduction_service
         intro_svc = get_introduction_service()
-        
+
         # Draft an intro message
         message = intro_svc.draft_intro_message(connector, target, reason)
-        
-        # Create the record in Airtable
-        record_id = intro_svc.create_introduction(
-            connector_name=connector,
-            target_name=target,
+
+        # Push an INTRO_DRAFT task instead of committing immediately
+        slots = IntroDraftSlots(
+            connector=connector,
+            target=target,
             reason=reason,
-            status="suggested",
-            intro_message=message
+            draft_message=message,
         )
-        
-        if record_id:
-            # Also update the contacts' introduced_by/introduced_to fields
-            try:
-                sheets = get_sheets_service()
-                sheets._ensure_initialized()
-                sheets.update_contact(connector, {"introduced_to": target})
-                sheets.update_contact(target, {"introduced_by": connector})
-            except Exception as e:
-                logger.warning(f"Could not update intro fields: {e}")
-            
-            response = f"🤝 **Introduction created!**\n\n"
-            response += f"**{connector}** → **{target}**\n"
-            if reason:
-                response += f"Reason: {reason}\n"
-            response += f"\n**Draft message:**\n_{message}_\n"
-            response += f"\nStatus: suggested. Say 'confirm intro' to proceed."
-            return response
-        
-        return f"Failed to create introduction between {connector} and {target}."
+        task = ActiveTask(
+            task_type=TaskType.INTRO_DRAFT,
+            status=TaskStatus.ACTIVE,
+            slots=slots,
+            label=f"Intro: {connector} → {target}",
+        )
+        task_stack = self.memory.get_task_stack(self.user_id)
+        task_stack.push(task)
+
+        response_text = f"🤝 **Introduction drafted**\n\n"
+        response_text += f"**{connector}** → **{target}**\n"
+        if reason:
+            response_text += f"Reason: {reason}\n"
+        response_text += f"\n**Draft message:**\n_{message}_\n"
+        response_text += "\nSay **save** to confirm or **cancel** to discard."
+
+        return MessageResponse(
+            text=response_text,
+            buttons=[[("Confirm", "save"), ("Cancel", "cancel")]],
+        )
+
+    # Keep create_introduction as alias
+    async def create_introduction(self, connector: str, target: str, reason: str = None) -> str:
+        """Alias for draft_introduction (backward compatibility)."""
+        return await self.draft_introduction(connector, target, reason)
 
     async def get_introductions(self, status: str = None) -> str:
         """
@@ -1837,6 +2024,7 @@ Provide a brief, informative summary suitable for a contact profile."""
             'enrich_contact': self.enrich_contact,
             'deep_research': self.deep_research,
             'get_draft_status': self.get_draft_status,
+            'get_workflow_status': self.get_workflow_status,
             'undo_last_save': self.undo_last_save,
             # V3 Phase 1 Tools
             'log_interaction': self.log_interaction,
@@ -1844,7 +2032,8 @@ Provide a brief, informative summary suitable for a contact profile."""
             'get_follow_ups': self.get_follow_ups,
             'get_relationship_health': self.get_relationship_health,
             # V3 Phase 2 Tools
-            'create_introduction': self.create_introduction,
+            'create_introduction': self.draft_introduction,
+            'draft_introduction': self.draft_introduction,
             'get_introductions': self.get_introductions,
             'suggest_introductions': self.suggest_introductions,
             'get_daily_digest': self.get_daily_digest,
