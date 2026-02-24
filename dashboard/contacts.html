@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rover Network — Contact Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0f0f0f;
+    color: #e0e0e0;
+    min-height: 100vh;
+    padding: 24px;
+  }
+  .header {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+  .header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6, #a855f7);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 4px;
+  }
+  .header p { color: #888; font-size: 14px; }
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+  .stat-card {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+  }
+  .stat-card .number {
+    font-size: 36px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .stat-card .label {
+    font-size: 12px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .stat-card.purple .number { color: #a855f7; }
+  .stat-card.blue .number { color: #6366f1; }
+  .stat-card.green .number { color: #22c55e; }
+  .stat-card.amber .number { color: #f59e0b; }
+  .stat-card.rose .number { color: #f43f5e; }
+  .charts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+    gap: 24px;
+    margin-bottom: 32px;
+  }
+  .chart-card {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 12px;
+    padding: 24px;
+  }
+  .chart-card h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    color: #ccc;
+  }
+  .chart-container {
+    position: relative;
+    height: 300px;
+  }
+  .table-card {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 12px;
+    padding: 24px;
+    overflow-x: auto;
+  }
+  .table-card h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    color: #ccc;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  th {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 2px solid #333;
+    color: #888;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+  }
+  td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #222;
+  }
+  tr:hover td { background: #222; }
+  .badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .badge-founder { background: #6366f120; color: #818cf8; }
+  .badge-investor { background: #22c55e20; color: #4ade80; }
+  .badge-enabler { background: #f59e0b20; color: #fbbf24; }
+  .badge-professional { background: #6b728020; color: #9ca3af; }
+  .badge-unknown { background: #33333360; color: #666; }
+  .loading {
+    text-align: center;
+    padding: 60px;
+    color: #666;
+    font-size: 16px;
+  }
+  .refresh-btn {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: #6366f1;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 48px;
+    height: 48px;
+    cursor: pointer;
+    font-size: 20px;
+    box-shadow: 0 4px 12px rgba(99,102,241,0.4);
+    transition: transform 0.2s;
+  }
+  .refresh-btn:hover { transform: scale(1.1); }
+  .last-updated {
+    text-align: center;
+    color: #555;
+    font-size: 12px;
+    margin-top: 24px;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🐺 Rover Network Dashboard</h1>
+  <p>Ahmed's Contact Intelligence</p>
+</div>
+
+<div id="app">
+  <div class="loading">Loading contacts from Airtable...</div>
+</div>
+
+<button class="refresh-btn" onclick="loadData()" title="Refresh">↻</button>
+
+<script>
+const AIRTABLE_PAT = new URLSearchParams(window.location.search).get('token') || localStorage.getItem('airtable_pat') || '';
+if (!AIRTABLE_PAT) { const t = prompt("Enter your Airtable Personal Access Token:"); if (t) { localStorage.setItem("airtable_pat", t); location.reload(); } else { document.getElementById("app").innerHTML = "<div class=\"loading\">No Airtable token provided.</div>"; }}
+const BASE_ID = 'appsdrCou6uCKoIi0';
+const TABLE = 'Contacts';
+
+let chartInstances = [];
+
+async function fetchAllContacts() {
+  let all = [];
+  let offset = null;
+  do {
+    const url = `https://api.airtable.com/v0/${BASE_ID}/${TABLE}?pageSize=100${offset ? '&offset=' + offset : ''}`;
+    const resp = await fetch(url, { headers: { Authorization: `Bearer ${AIRTABLE_PAT}` } });
+    const data = await resp.json();
+    all = all.concat(data.records || []);
+    offset = data.offset;
+  } while (offset);
+  return all;
+}
+
+function countBy(records, field) {
+  const counts = {};
+  records.forEach(r => {
+    let val = (r.fields[field] || 'Not Set').trim();
+    // Normalize
+    val = val.charAt(0).toUpperCase() + val.slice(1).toLowerCase();
+    counts[val] = (counts[val] || 0) + 1;
+  });
+  return counts;
+}
+
+function badgeClass(type) {
+  const t = (type || '').toLowerCase();
+  if (t.includes('founder')) return 'badge-founder';
+  if (t.includes('investor')) return 'badge-investor';
+  if (t.includes('enabler')) return 'badge-enabler';
+  if (t.includes('professional')) return 'badge-professional';
+  return 'badge-unknown';
+}
+
+function render(records) {
+  // Destroy existing charts
+  chartInstances.forEach(c => c.destroy());
+  chartInstances = [];
+
+  const types = countBy(records, 'contact_type');
+  const industries = countBy(records, 'industry');
+
+  // Remove 'Not set' and 'Unknown' from industries for cleaner chart
+  const cleanIndustries = {};
+  Object.entries(industries).forEach(([k, v]) => {
+    if (k !== 'Not set' && k !== 'Unknown' && k !== 'Not Set') cleanIndustries[k] = v;
+  });
+
+  const total = records.length;
+  const founders = types['Founder'] || 0;
+  const investors = types['Investor'] || 0;
+  const enablers = (types['Enabler'] || 0);
+  const professionals = types['Professional'] || 0;
+
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="stats-row">
+      <div class="stat-card purple"><div class="number">${total}</div><div class="label">Total Contacts</div></div>
+      <div class="stat-card blue"><div class="number">${founders}</div><div class="label">Founders</div></div>
+      <div class="stat-card green"><div class="number">${investors}</div><div class="label">Investors</div></div>
+      <div class="stat-card amber"><div class="number">${enablers}</div><div class="label">Enablers</div></div>
+      <div class="stat-card rose"><div class="number">${professionals + (types['Not set'] || 0)}</div><div class="label">Other</div></div>
+    </div>
+
+    <div class="charts-grid">
+      <div class="chart-card">
+        <h3>Contact Types</h3>
+        <div class="chart-container"><canvas id="typeChart"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Industries</h3>
+        <div class="chart-container"><canvas id="industryChart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="table-card">
+      <h3>All Contacts</h3>
+      <table>
+        <thead>
+          <tr><th>Name</th><th>Company</th><th>Type</th><th>Industry</th><th>Score</th></tr>
+        </thead>
+        <tbody>
+          ${records.sort((a, b) => (b.fields.relationship_score || 0) - (a.fields.relationship_score || 0)).map(r => {
+            const f = r.fields;
+            const type = f.contact_type || 'Not Set';
+            return `<tr>
+              <td>${f.full_name || f.first_name || '—'}</td>
+              <td>${f.company || '—'}</td>
+              <td><span class="badge ${badgeClass(type)}">${type}</span></td>
+              <td>${(f.industry || '—').trim()}</td>
+              <td>${f.relationship_score || '—'}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="last-updated">Last updated: ${new Date().toLocaleString()}</div>
+  `;
+
+  // Type donut chart
+  const typeColors = {
+    'Founder': '#818cf8',
+    'Investor': '#4ade80',
+    'Enabler': '#fbbf24',
+    'Professional': '#9ca3af',
+    'Not set': '#555'
+  };
+  const typeLabels = Object.keys(types);
+  const typeData = Object.values(types);
+
+  const ctx1 = document.getElementById('typeChart').getContext('2d');
+  chartInstances.push(new Chart(ctx1, {
+    type: 'doughnut',
+    data: {
+      labels: typeLabels,
+      datasets: [{
+        data: typeData,
+        backgroundColor: typeLabels.map(l => typeColors[l] || '#555'),
+        borderWidth: 0
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom', labels: { color: '#999', padding: 16 } }
+      }
+    }
+  }));
+
+  // Industry bar chart
+  const sortedInd = Object.entries(cleanIndustries).sort((a, b) => b[1] - a[1]);
+  const ctx2 = document.getElementById('industryChart').getContext('2d');
+  chartInstances.push(new Chart(ctx2, {
+    type: 'bar',
+    data: {
+      labels: sortedInd.map(x => x[0]),
+      datasets: [{
+        data: sortedInd.map(x => x[1]),
+        backgroundColor: '#6366f180',
+        borderColor: '#6366f1',
+        borderWidth: 1,
+        borderRadius: 6
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      indexAxis: 'y',
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#888' }, grid: { color: '#222' } },
+        y: { ticks: { color: '#ccc' }, grid: { display: false } }
+      }
+    }
+  }));
+}
+
+async function loadData() {
+  const app = document.getElementById('app');
+  app.innerHTML = '<div class="loading">Loading contacts from Airtable...</div>';
+  try {
+    const records = await fetchAllContacts();
+    render(records);
+  } catch (e) {
+    app.innerHTML = `<div class="loading">Error: ${e.message}</div>`;
+  }
+}
+
+loadData();
+</script>
+</body>
+</html>
